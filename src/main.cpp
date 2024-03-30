@@ -9,6 +9,7 @@
 #include "NTPTimeClient.h"
 
 #include "DCCpacketWifiModule.h"
+#include "DCCPacketDecoderModule.h"
 
 unsigned long _lastTime;  
 unsigned long _timerDelay = 10000;
@@ -86,7 +87,8 @@ void setup()
   
 
     // Start underlying hardware modules
-    DCCpacketWifiModule::setup(); 
+    DCCpacketWifiModule::setup();
+    DCCPacketDecoderModule::setup();
          
     // Metro ESP32-S3 no screen.
 //    M5.Lcd.println("HTTP server started"); 
@@ -120,6 +122,8 @@ void loop()
 
     delay(2);
     WebPageTrackMeasuring::loop();
+    delay(2);
+    DCCPacketDecoderModule::loop();
    
     // This will "feed the watchdog".
     delay(2);
