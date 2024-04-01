@@ -68,7 +68,7 @@
   #elif defined(ARDUINO_MEGA)
     #define INPUTPIN 49
   #elif defined(ESP32)
-    #define INPUTPIN 5
+    #define INPUTPIN 2
   #else
     // Assume timer not supported, use default pin
     #undef USETIMER
@@ -118,9 +118,6 @@
 //#define LEDPIN_DECODING 7   // lights when a packet with valid checksum is received
 //#define LEDPIN_FAULT 6      // Lights when a checksum error or glitch is encountered.
 
-// Uncomment the following line to enable HTTP Server (ESP32 or ESP8266 only).
-#define USE_HTTPSERVER
-
 // SSID and password can be configured here.  However, the server will, by preference,
 // connect using the same credentials as last time; if that fails it will try WPS; 
 // only if that fails too, will it use the credentials below.
@@ -138,12 +135,6 @@
   #endif
 #endif
 
-// HTTP Server isn't supported on Uno or Nano or Mega
-#if defined(ARDUINO_UNO_NANO) | defined(ARDUINO_MEGA)
-  #if defined(USE_HTTPSERVER)
-    #undef USE_HTTPSERVER
-  #endif
-#endif
 
 #define SERIAL_SPEED 115200
 

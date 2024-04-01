@@ -3,6 +3,7 @@
 #include "WifiSerialDebug.h"
 
 #include "DCCpacketWifiModule.h"
+#include "DCCPacketDecoderModule.h"
 #include "ConfigLoader.h"
 
 
@@ -41,66 +42,49 @@ char WebPageTrackMeasuring::_html[] PROGMEM = R"rawliteral(
   </div>
   <div class="content">
     <div class="card-grid">
-      <div class="card">
-        <div class="button-container">
-          <button id="btnStart" class="button" onClick="startMeasuring(this)">Start</button>
-          <button id="btnStart" class="button" onClick=" resetDistance(this)">Reset Distance</button>
-        </div>                   
+      <div class="card">                           
         <p><table class="datatable">
         <tr>
-          <th>Data</th>
-          <th>Value</th>
-          <th>Units</th>          
+          <th>DCC Statitics</th>                   
         </tr>
-         <tr>
-          <td>Scale</td>
-          <td><span id="scale">%Scale%</span></td>
-          <td><span id="scaleunit">%Scaleunit%</span></td>        
+         <tr>          
+          <td><span id="bitCount">%DCCbitcount%</span></td>                
         </tr>
         <tr>
-          <td>Wheel Diameter</td>
-          <td><span id="wheeldiameter">%Wheel Diameter%</span></td>
-          <td>[mm]</td>          
+          <td><span id="packetStats">%DCCpacketStats%</span></td>        
         </tr>
-         <tr>
-          <td>Angle</td>
-          <td><span id="angle">%angle%</span></td>
-          <td>[&deg]</td>          
+         <tr>         
+          <td><span id="zeroBits">%zeroBits%</span></td>                 
         </tr>
-         <tr>
-          <td>Reverse Direction</td>
-          <td><span id="reversedirection">%reversedirection%</span></td>
-          <td></td>          
+         <tr>        
+          <td><span id="oneBits">%oneBits%</span></td>        
+        </tr>
+        <tr>        
+          <td><span id="direction">--</span></td>        
         </tr>
         <tr>
-          <td>Direction</td>
-          <td><span id="direction">%Direction%</span></td>
-          <td></td>          
+          <td><span id="dccPacketOne">%dccPacketOne%</span></td>     
         </tr>
         <tr>
-          <td>Measured Speed</td>
-          <td><span id="measuredspeed">%Measured Soeed%</span></td>
-          <td>[mm/s]</td>          
-        </tr>        
-        <tr>
-          <td>Scale Speed</td>
-          <td><span id="scalespeed">%scalespeed%</span></td>
-          <td>[km/h]</td>
+          <td><span id="dccPacketTwo">%dccPacketOne%</span></td>     
         </tr>
         <tr>
-          <td>Absolute Distance</td>
-          <td><span id="absdistance">%absdistance%</span></td>
-          <td>[mm]</td>  
+          <td><span id="dccPacketThree">%dccPacketOne%</span></td>     
         </tr>
         <tr>
-          <td>Relative Distance</td>
-          <td><span id="reldistance">%reldistance%</span></td>
-          <td>[mm]</td>  
+          <td><span id="dccPacketFour">%dccPacketOne%</span></td>     
         </tr>
-         <tr>
-          <td>Sampling Rate</td>
-          <td><span id="samplingrate">%samplingrate%</span></td>
-          <td>[Hz]</td>  
+        <tr>
+          <td><span id="dccPacketFive">%dccPacketOne%</span></td>     
+        </tr>
+        <tr>
+          <td><span id="dccPacketSix">%dccPacketOne%</span></td>     
+        </tr>
+        <tr>
+          <td><span id="dccPacketSeven">%dccPacketOne%</span></td>     
+        </tr>
+        <tr>
+          <td><span id="dccPacketEight">%dccPacketOne%</span></td>     
         </tr>
       </table></p>
       </div>      
@@ -136,17 +120,9 @@ char WebPageTrackMeasuring::_html[] PROGMEM = R"rawliteral(
         <td><span id="coretemp">%coretemp%</span></th>
         <td>Access Point</th>
         <td><span id="accesspoint">%accesspoint%</span></th>
-        <td>Bat. Voltage</th>
-        <td><span id="batvoltage">%batvoltage%</span></th>    
-      </tr>
-      <tr>
-        <td>Ext Voltage</th>
-        <td><span id="extvoltage">%extvoltage%</span></th>
-        <td></th>
-        <td></th>
-        <td>Bat. Current</th>
-        <td><span id="batcurrent">%batcurrent%</span></th>    
-      </tr>
+        <td>Available SPIFFS</th>
+        <td><span id="spiffs">%spiffs%</span></th>    
+      </tr>      
     </table></p>
   </div>
     <script src="canvasjsascsv.min.js"></script> 
@@ -157,6 +133,7 @@ char WebPageTrackMeasuring::_html[] PROGMEM = R"rawliteral(
 AsyncWebSocket WebPageTrackMeasuring::_ws("/wstrackmeasuring");
 AsyncEventSource WebPageTrackMeasuring::_events("/eventstrackmeasuring");
 unsigned long WebPageTrackMeasuring::_lastTime = 0;
+unsigned long WebPageTrackMeasuring::_lastTimeDCC = 0;
 unsigned long WebPageTrackMeasuring::_timerDelay = 1000;
 int WebPageTrackMeasuring::_millisRollOver = 0;
 unsigned long WebPageTrackMeasuring::_lastMillis = 0;
@@ -317,11 +294,17 @@ void WebPageTrackMeasuring::loop()
             "STATS",
             millis());
 
+        _lastTime = millis();
+    }
+
+    if ((millis() - _lastTimeDCC) > (DCCPacketDecoderModule::GetRefreshDelay() * 1000))
+    {
+
         // Get speed data
         String latestSpeedData;
         latestSpeedData.reserve(1024);
         
-        //DCCpacketWifiModule::GetSensorData(latestSpeedData);
+        DCCPacketDecoderModule::GetDCCPacketStats(latestSpeedData);
         if (latestSpeedData.isEmpty() == false)
         {
             Log::println(latestSpeedData.c_str(), LogLevel::LOOP);
@@ -330,7 +313,19 @@ void WebPageTrackMeasuring::loop()
                          millis());
         }
 
-        _lastTime = millis();
+        String latestDCCPackets;
+        latestDCCPackets.reserve(1024);
+
+        DCCPacketDecoderModule::GetDCCPacketBytes(latestDCCPackets);
+        if (latestDCCPackets.isEmpty() == false)
+        {
+            Log::println(latestDCCPackets.c_str(), LogLevel::LOOP);
+            _events.send(latestDCCPackets.c_str(),
+                         "PacketBytes",
+                         millis());
+        }
+
+        _lastTimeDCC = millis();        
     }
 }
 
@@ -348,6 +343,7 @@ void WebPageTrackMeasuring::GetStats(String& jsonData)
     TimeClient::getFormattedDate(formattedTime);
     Data["systime"] = formattedTime;
     Data["freemem"] = String(ESP.getFreeHeap());
+    Data["freeflash"] = String(ESP.getFlashChipSize());
     Data["totaldisk"] = String(SPIFFS.totalBytes());
     Data["useddisk"] = String(SPIFFS.usedBytes());
     Data["freedisk"] = String(SPIFFS.totalBytes() - SPIFFS.usedBytes());

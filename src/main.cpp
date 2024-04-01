@@ -123,6 +123,11 @@ void loop()
     delay(2);
     WebPageTrackMeasuring::loop();
     delay(2);
+
+    // Important this must be after any other web pages
+    // or modules that access the DCC packet stats.
+    // This line will reset that string so process
+    // currnet results before this point.
     DCCPacketDecoderModule::loop();
    
     // This will "feed the watchdog".

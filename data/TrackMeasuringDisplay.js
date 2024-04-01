@@ -56,13 +56,54 @@ function plotSpeed(jsonValue) {
   chart.update();
 }
 
-function  UpdateUI()
+function  UpdateDCCStats(jsonValue)
 {
-  document.getElementById("wheeldiameter").innerHTML = configData.WheelDia.toFixed(2);
-  document.getElementById("scale").innerHTML = configData.ScaleList[configData.ScaleIndex].Name;
-  document.getElementById("scaleunit").innerHTML = "1:" + configData.ScaleList[configData.ScaleIndex].Scale;
-  document.getElementById("reversedirection").innerHTML = configData.ReverseDir;
+    var data = jsonValue.Stats;
+    console.log(data);
 
+    // These counts are for half-bits, so divide by two.
+    document.getElementById("bitCount").innerHTML = "Bit Count / " + data.refreshTime + " sec= " + (data.count / 2).toFixed(0) + " (Zeros= " + (data.count0 / 2).toFixed(0) + ", Ones= " + (data.count1 / 2).toFixed(0) + "), Glitches= " + data.glitchCount;
+        
+    document.getElementById("packetStats").innerHTML = "Valid= " + data.packetCount + ", NMRA out of spec= " + data.outOfSpecRejectionCount + ", Checksum Error= " + data.checksumError + ", Lost= " + data.countLostPackets + ", Long= " + data.countLongPackets;
+    document.getElementById("zeroBits").innerHTML = "0 half-bit length (us): " + (data.total0 / data.count0).toFixed(1) + " ("+ data.min0 + " - " + data.max0 + ") delta < " + data.max0BitDelta;
+    document.getElementById("oneBits").innerHTML = "1 half-bit length (us): " + (data.total1 / data.count1).toFixed(1) + " ("+ data.min1 + " - " + data.max1 + ") delta < " + data.max1BitDelta;
+}
+
+function  UpdateDCCPackets(jsonValue)
+{
+  var data = jsonValue.DccBytes;
+  console.log(data);
+
+  document.getElementById("dccPacketOne").innerHTML = data.PacketZero;
+  document.getElementById("dccPacketTwo").innerHTML = data.PacketOne;
+  document.getElementById("dccPacketThree").innerHTML = data.PacketTwo;
+  document.getElementById("dccPacketFour").innerHTML = data.PacketThree;
+
+  document.getElementById("dccPacketFive").innerHTML = data.PacketZeroInterval[0];
+
+  var psuedoTime = 0;
+
+  chart.data.datasets[0].data.cl
+
+  chart.data.datasets[0].data.length = 0;
+
+  // Zero is num intervals
+  for(let i = 1; i <= 20; i+=2)
+  {    
+    psuedoTime += data.PacketZeroInterval[i];    
+    chart.data.datasets[0].data.push({ x: psuedoTime, y: 0.0});    
+    chart.data.datasets[0].data.push({ x: psuedoTime, y: 5.0});
+
+    psuedoTime += data.PacketZeroInterval[i + 1];
+    chart.data.datasets[0].data.push({ x: psuedoTime, y: 5.0});
+    chart.data.datasets[0].data.push({ x: psuedoTime, y: 0.0});
+  }
+
+  chart.update();
+}
+
+function  UpdateUI()
+{  
   chart.options.scales['y1'].title.text = 'Scale (' + configData.ScaleList[configData.ScaleIndex].Name + "  1:" + configData.ScaleList[configData.ScaleIndex].Scale + ') Speed [km/h]';
   chart.update();
 }
@@ -75,14 +116,11 @@ function  UpdateFooter()
   
   document.getElementById("systemuptime").innerHTML = formatTime(Math.trunc(statsData.uptime/1000)); 
   document.getElementById("signalstrength").innerHTML = statsData.sigstrength  + " dBm";
-  document.getElementById("ramflash").innerHTML = statsData.freemem + " / " + statsData.freedisk + " Bytes";
+  document.getElementById("ramflash").innerHTML = statsData.freemem + " / " + statsData.freeflash + " Bytes";
 
   document.getElementById("coretemp").innerHTML = statsData.temp.toFixed(2) + "\u00B0C"; 
   document.getElementById("accesspoint").innerHTML = statsData.apname;
-  document.getElementById("batvoltage").innerHTML = statsData.ubat.toFixed(2) + " V";
-
-  document.getElementById("extvoltage").innerHTML = statsData.uin.toFixed(2) + " V";
-  document.getElementById("batcurrent").innerHTML = statsData.ibat.toFixed(2) + " mA";  
+  document.getElementById("spiffs").innerHTML = statsData.freedisk + " / " + statsData.totaldisk + "Bytes";
 }
 
 if (!!window.EventSource) {
@@ -106,7 +144,14 @@ if (!!window.EventSource) {
     //console.log("Track Measuring new_readings", e.data);
     var myObj = JSON.parse(e.data);
 //    console.log(myObj);
-    plotSpeed(myObj);
+    UpdateDCCStats(myObj);
+  }, false);
+
+  source.addEventListener('PacketBytes', function(e) {
+    //console.log("Track Measuring new_readings", e.data);
+    var myObj = JSON.parse(e.data);
+//    console.log(myObj);
+    UpdateDCCPackets(myObj);
   }, false);
 
   source.addEventListener('CfgData', function(e) {

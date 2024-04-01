@@ -170,5 +170,16 @@ Statistics DCCStatisticsClass::getAndClearStats() {
   return stats;
 }
 
+// Return a copy of the current set of statistics accumulated.  THis
+// version doe NOT clear active stats and can be used to peek at the
+// current stats allowing them to still accumulate.
+Statistics DCCStatisticsClass::getStats() 
+{
+    Statistics stats;
+    memcpy(&stats, (void *)&activeStats, sizeof(activeStats));
+    stats.refreshTime = refreshTime;
+    return stats;
+}
+
 // Declare singleton class instance
 DCCStatisticsClass DCCStatistics;

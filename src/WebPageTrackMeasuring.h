@@ -20,7 +20,8 @@ private:
     static unsigned long _lastMillis;    
 
     // Timer variables
-    static unsigned long _lastTime;  
+    static unsigned long _lastTime;
+    static unsigned long _lastTimeDCC; 
     static unsigned long _timerDelay;    
     
     static void notifyClients();
