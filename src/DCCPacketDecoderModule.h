@@ -17,6 +17,7 @@ public:
     static void GetDCCPacketStats(String& jsonData);
     static void GetDCCPacketBytes(String& jsonData);
     static unsigned int GetRefreshDelay();
+    static void SetRefreshDelay(unsigned int delay);
 
 private:
     static void clearHashList();

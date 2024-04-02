@@ -1274,3 +1274,8 @@ unsigned int DCCPacketDecoderModule::GetRefreshDelay()
 {
     return DCCStatistics.getRefreshTime();
 }
+
+void DCCPacketDecoderModule::SetRefreshDelay(unsigned int delay)
+{
+    DCCStatistics.setRefreshTime(delay);
+}

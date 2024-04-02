@@ -42,7 +42,12 @@ char WebPageTrackMeasuring::_html[] PROGMEM = R"rawliteral(
   </div>
   <div class="content">
     <div class="card-grid">
-      <div class="card">                           
+      <div class="card">  
+        <div class="button-container">
+          <button id="btnCapture" class="button" onClick="capture(this)">Capture</button>
+          <button id="btnContinuous" class="button" onClick=" continuous(this)">Continuous</button>
+          <button id="btnStop" class="button" onClick=" stop(this)">Stop</button>
+        </div>                            
         <p><table class="datatable">
         <tr>
           <th>DCC Statitics</th>                   
@@ -125,7 +130,8 @@ char WebPageTrackMeasuring::_html[] PROGMEM = R"rawliteral(
       </tr>      
     </table></p>
   </div>
-    <script src="canvasjsascsv.min.js"></script> 
+    <script src="canvasjsascsv.min.js"></script>
+    <script src="papaparse.min.js"></script> 
     <script src="TrackMeasuringDisplay.js"></script>  
 </body>
 </html>)rawliteral";
@@ -164,7 +170,29 @@ void WebPageTrackMeasuring::handleWebSocketMessage(void *arg, uint8_t *data, siz
 
         String thisCmd = doc["Cmd"];
         Log::println(thisCmd, LogLevel::INFO);
+
         
+        if (thisCmd == "SetSensor")
+        {
+            String subCmd = doc["SubCmd"];
+            Log::println(subCmd, LogLevel::INFO);
+
+            if (subCmd == "Capture")
+            {
+                DCCPacketDecoderModule::SetRefreshDelay(1);
+            }   
+            if (subCmd == "Continuous")
+            {                
+                // Setting refresh to default for DCC Inspector.
+                DCCPacketDecoderModule::SetRefreshDelay(4);
+            }       
+            if (subCmd == "Stop")
+            {                
+                // Setting refresh delay to once per day effectively
+                // stopping the loop refresh.
+                DCCPacketDecoderModule::SetRefreshDelay(86400);
+            }
+        }
         if (thisCmd == "CfgData") // Config Request Format: {"Cmd":"CfgData", "Type":"pgxxxxCfg", "FileName":"name"}
         {
             String cmdType = doc["Type"];
@@ -300,6 +328,14 @@ void WebPageTrackMeasuring::loop()
     if ((millis() - _lastTimeDCC) > (DCCPacketDecoderModule::GetRefreshDelay() * 1000))
     {
 
+        if(DCCPacketDecoderModule::GetRefreshDelay() <= 1)
+        {
+            // THis is for capture mode. After the one capture is
+            // complete turn off.
+            DCCPacketDecoderModule::SetRefreshDelay(86400);
+        }
+
+
         // Get speed data
         String latestSpeedData;
         latestSpeedData.reserve(1024);
@@ -352,14 +388,7 @@ void WebPageTrackMeasuring::GetStats(String& jsonData)
     Data["sigstrength"] = WiFi.RSSI();
     Data["apname"] = WiFi.SSID();
 
-    Data["temp"] = DCCpacketWifiModule::ReadCoreTemp();
-    Data["ubat"] = "NA on S3";
-    Data["ibat"] = "NA on S3";
-    Data["pwrbat"] = "NA on S3"; //M5.Power.Axp192.getBatteryPower();
-    Data["ubus"] = "NA on S3";   //M5.Power.Axp192.getVBUSVoltage();
-    Data["ibus"] = "NA on S3";   //M5.Power.Axp192.getVBUSCurrent();
-    Data["uin"] = "NA on S3";    //M5.Power.Axp192.getACINVolatge();
-    Data["iin"] = "NA on S3";    //M5.Power.Axp192.getACINCurrent();
+    Data["temp"] = DCCpacketWifiModule::ReadCoreTemp();    
 
     serializeJson(doc, jsonData);
 }

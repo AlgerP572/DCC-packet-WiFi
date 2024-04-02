@@ -276,19 +276,22 @@ function initChart(){
     CanvasJSDataAsCSV(chart, "Track_Data", "buttonCsv");
 }
 
-function startMeasuring(sender)
-{
+function capture(sender)
+{  
   console.log("Click", sender);
-	if (sender.innerHTML == "Start")
-	{		
-		sendMessage(websocket, "{\"Cmd\":\"SetSensor\", \"SubCmd\":\"RepRate\",\"Val\":500}");
-		document.getElementById("btnStart").innerHTML = "Stop";
-	}
-	else
-	{
-		sendMessage(websocket,"{\"Cmd\":\"SetSensor\", \"SubCmd\":\"RepRate\",\"Val\":0}");
-		document.getElementById("btnStart").innerHTML = "Start";
-	}
+  sendMessage(websocket, "{\"Cmd\":\"SetSensor\", \"SubCmd\":\"Capture\"}");	
+}
+
+function continuous(sender)
+{
+    console.log("Click", sender);
+	sendMessage(websocket, "{\"Cmd\":\"SetSensor\", \"SubCmd\":\"Continuous\"}");	
+}
+
+function stop(sender)
+{
+    console.log("Click", sender);
+	sendMessage(websocket, "{\"Cmd\":\"SetSensor\", \"SubCmd\":\"Stop\"}");	
 }
 
 function resetDistance(sender)
