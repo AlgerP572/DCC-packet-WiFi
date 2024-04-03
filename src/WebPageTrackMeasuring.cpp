@@ -310,7 +310,6 @@ void WebPageTrackMeasuring::loop()
         Log::println("-----", LogLevel::LOOP);
 
         // Send Events to the Web Client with the Sensor Readings
-
         _events.send("ping", "", millis());
 
         String statsData;
@@ -339,8 +338,14 @@ void WebPageTrackMeasuring::loop()
         // Get speed data
         String latestSpeedData;
         latestSpeedData.reserve(1024);
+
+        // Ensure DCCPacketDecoderModule::loop is called before this loop in main.
+        // DCCPacketDecoderModule::loop will capture the latest stats for us.  This
+        // was done to preserve the original code as much as possible. It also helps
+        // to maintain coherency between loops so they report the same stats.
+        Statistics stats = DCCPacketDecoderModule::GetLastKnwonStats();
         
-        DCCPacketDecoderModule::GetDCCPacketStats(latestSpeedData);
+        DCCPacketDecoderModule::GetDCCPacketStats(latestSpeedData, stats);
         if (latestSpeedData.isEmpty() == false)
         {
             Log::println(latestSpeedData.c_str(), LogLevel::LOOP);
@@ -352,7 +357,7 @@ void WebPageTrackMeasuring::loop()
         String latestDCCPackets;
         latestDCCPackets.reserve(1024);
 
-        DCCPacketDecoderModule::GetDCCPacketBytes(latestDCCPackets);
+        DCCPacketDecoderModule::GetDCCPacketBytes(latestDCCPackets, stats);
         if (latestDCCPackets.isEmpty() == false)
         {
             Log::println(latestDCCPackets.c_str(), LogLevel::LOOP);

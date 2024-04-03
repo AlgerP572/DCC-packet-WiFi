@@ -121,14 +121,16 @@ void loop()
     }
 
     delay(2);
-    WebPageTrackMeasuring::loop();
-    delay(2);
 
-    // Important this must be after any other web pages
+    // Important this must be before any other web pages
     // or modules that access the DCC packet stats.
-    // This line will reset that string so process
-    // currnet results before this point.
+    // This line captures the current DCC statistics
+    // and caches the results. Latest results can
+    // be retrieved with DCCPacketDecoderModule::GetLastKnwonStats()
     DCCPacketDecoderModule::loop();
+
+    delay(2);
+    WebPageTrackMeasuring::loop();
    
     // This will "feed the watchdog".
     delay(2);

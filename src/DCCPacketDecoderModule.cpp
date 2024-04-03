@@ -136,8 +136,7 @@
 
 #include "StringBuilder.h"
 
-// Statistics structures and functions.
-#include "DCCStatistics.h"
+Statistics DCCPacketDecoderModule::_lastKnownStats;
 
 const int nPackets = 16; // Number of packet buffers
 const int pktLength = 8; // Max length+1 in bytes of DCC packet
@@ -244,8 +243,7 @@ void DCCPacketDecoderModule::loop()
         if (!EventTimer.begin(INPUTPIN, capture))
         {
             Serial.println(F("Unable to start EventTimer, check configured pin"));
-            while (1)
-                ;
+            while (1);
         }
 
         DCCStatistics.setRefreshTime(4);
@@ -266,13 +264,13 @@ void DCCPacketDecoderModule::loop()
             Serial.println('-');
 
         // Snapshot and clear statistics
-        Statistics stats = DCCStatistics.getAndClearStats();
+        _lastKnownStats = DCCStatistics.getAndClearStats();
         clearHashList();
 
         // Print DCC Statistics to the serial USB output.
         if (showDiagnostics)
         {
-            DCCStatistics.writeFullStatistics(stats, showCpuStats, showBitLengths);
+            DCCStatistics.writeFullStatistics(_lastKnownStats, showCpuStats, showBitLengths);
             Serial.println("--");
         }
 
@@ -1212,10 +1210,14 @@ bool DCCPacketDecoderModule::processCommands()
         return false;
 }
 
-void DCCPacketDecoderModule::GetDCCPacketStats(String& jsonData)
+ Statistics DCCPacketDecoderModule::GetLastKnwonStats()
+ {
+    return _lastKnownStats;
+ }
+
+void DCCPacketDecoderModule::GetDCCPacketStats(String& jsonData, Statistics& stats)
 {
     JsonDocument doc;
-    Statistics stats = DCCStatistics.getStats();
 
     doc["Cmd"] = "STATS";
     JsonObject Stats = doc["Stats"].to<JsonObject>();
@@ -1246,10 +1248,9 @@ void DCCPacketDecoderModule::GetDCCPacketStats(String& jsonData)
     serializeJson(doc, jsonData);
 }
 
-void DCCPacketDecoderModule::GetDCCPacketBytes(String& jsonData)
+void DCCPacketDecoderModule::GetDCCPacketBytes(String& jsonData, Statistics& stats)
 {
-    JsonDocument doc;
-    Statistics stats = DCCStatistics.getStats();
+    JsonDocument doc;    
 
     doc["Cmd"] = "DCCBYTES";
     JsonObject Packets = doc["DccBytes"].to<JsonObject>();
@@ -1259,7 +1260,7 @@ void DCCPacketDecoderModule::GetDCCPacketBytes(String& jsonData)
     Packets["PacketThree"] = DCCPackets::GetPacketSrting(3);
     Packets["PacketFour"] = DCCPackets::GetPacketSrting(4);
 
-    JsonArray PacketZeroInterval = Packets.createNestedArray("PacketZeroInterval");
+    JsonArray PacketZeroInterval = Packets["PacketZeroInterval"].to<JsonArray>();
 
     unsigned int* intervals = DCCPackets::GetInterval(0);
     for (int i = 0; i <= DCCPackets::GetIntervalLength(0); i++)

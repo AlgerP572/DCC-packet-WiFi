@@ -103,7 +103,6 @@ public:
   
   // Return a copy of the current set of statistics accumulated.
   Statistics getAndClearStats();
-  Statistics getStats();
 
   inline unsigned int getRefreshTime() { return refreshTime; }
   inline void setRefreshTime(unsigned int value) { refreshTime = value; }
