@@ -1,9 +1,24 @@
 
 #include "WebServer.h"
 #include "WifiConnection.h"
+#include "WifiSerialDebug.h"
 
 bool WifiConnection::setup(AsyncWebServer* server, DNSServer* dns, bool reset)
-{   
+{ 
+    if (server == nullptr)
+    {
+        // Handle the error appropriately        
+        Log::println("Error: Server instance is null", LogLevel::ERROR);
+        return false;
+    }
+
+    if (dns == nullptr)
+    {
+        // Handle the error appropriately       
+        Log::println("Error: dns instance is null", LogLevel::ERROR);
+        return false;
+    }
+
     AsyncWiFiManager wm(server, dns);
     if(reset)
     {
@@ -34,6 +49,7 @@ bool WifiConnection::setup(AsyncWebServer* server, DNSServer* dns, bool reset)
     //  3985                    10.0.139.185
     return wm.autoConnect("Wireless-DCC-Decoder-Get-Setup");
 
+// TODO: still a work in progess...
 //     IPAddress gateway2 = WiFi.gatewayIP();
 //     byte first = gateway2[0];
 //     WiFi.disconnect();

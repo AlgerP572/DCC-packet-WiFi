@@ -18,6 +18,8 @@
 // Module containing singleton instance of DCCStatistics class.
 
 #include "DCCStatistics.h"
+#include "WifiSerialDebug.h"
+#include "CpuUsage.h"
 
 // Update statistics to reflect the received digital input transition.  Altbit
 //  is zero if the transition is the end of the first half-bit and one if it is
@@ -59,98 +61,109 @@ void INTERRUPT_SAFE DCCStatisticsClass::recordHalfBit(
 //
 void DCCStatisticsClass::writeFullStatistics(Statistics &stats,
                                              bool showCpuStats,
-                                             bool showBitLengths) {
-  Serial.print(F("Bit Count/"));
-  Serial.print(refreshTime);
-  Serial.print(F(" sec="));
-  // These counts are for half-bits, so divide by two.
-  Serial.print(stats.count / 2);
-  Serial.print(F(" (Zeros="));
-  Serial.print(stats.count0 / 2);
-  Serial.print(F(", Ones="));
-  Serial.print(stats.count1 / 2);
-  Serial.print(F("), Glitches="));
-  Serial.println(stats.glitchCount);
+                                             bool showBitLengths)
+{
 
-  Serial.print(F("Valid Packets="));
-  Serial.print(stats.packetCount);
-  Serial.print(F(", NMRA out of spec="));
-  Serial.print(stats.outOfSpecRejectionCount);
-  Serial.print(F(", Checksum Errors="));
-  Serial.print(stats.checksumError);
-  Serial.print(F(", Lost pkts="));
-  Serial.print(stats.countLostPackets);
-  Serial.print(F(", Long pkts="));
-  Serial.println(stats.countLongPackets);
+    // For clarity in the log forcing all of this information to be in the
+    // same block of the log.
+    Log::TakeMultiPrintSection();
 
-  Serial.print(F("0 half-bit length (us): "));
-  if (stats.min0 <= stats.max0) {
-    Serial.print((float)stats.total0 / stats.count0, 1);
-    Serial.print(F(" ("));
-    Serial.print(stats.min0);
-    Serial.print(F("-"));
-    Serial.print(stats.max0);
-    Serial.print(F(")"));
-    Serial.print(F(" delta < "));
-    Serial.print(stats.max0BitDelta);
-  } else
-    Serial.print(F("<none>"));
-  Serial.println();
-  Serial.print(F("1 half-bit length (us): "));
-  if (stats.min1 <= stats.max1) {
-    Serial.print((float)stats.total1 / stats.count1, 1);
-    Serial.print(F(" ("));
-    Serial.print(stats.min1);
-    Serial.print(F("-"));
-    Serial.print(stats.max1);
-    Serial.print(F(")"));
-    Serial.print(F(" delta < "));
-    Serial.print(stats.max1BitDelta);
-  } else
-    Serial.print(F("<none>"));
-  Serial.println();
+    Log::print((char*)F("Bit Count/"), LogLevel::INFO);
+    Log::print(refreshTime, LogLevel::INFO);
+    Log::print((char*)F(" sec="), LogLevel::INFO);
+    // These counts are for half-bits, so divide by two.
+    Log::print((uint32_t)(stats.count / 2), LogLevel::INFO);
+    Log::print((char*)F(" (Zeros="), LogLevel::INFO);
+    Log::print((uint32_t)(stats.count0 / 2), LogLevel::INFO);
+    Log::print((char*)F(", Ones="), LogLevel::INFO);
+    Log::print((uint32_t) (stats.count1 / 2), LogLevel::INFO);
+    Log::print((char*)F("), Glitches="), LogLevel::INFO);
+    Log::println(&stats.glitchCount, LogLevel::INFO);
 
-  if (showCpuStats) {
-    Serial.print(F("IRC Duration (us): "));
-    if (stats.minInterruptTime <= stats.maxInterruptTime) {
-      Serial.print((float)stats.totalInterruptTime / stats.count, 1);
-      Serial.print(F(" ("));
-      Serial.print(stats.minInterruptTime);
-      Serial.print(F("-"));
-      Serial.print(stats.maxInterruptTime);
-      Serial.print(F(")"));
-    } else 
-      Serial.print(F("<none>"));
+    Log::print((char*)F("Valid Packets="), LogLevel::INFO);
+    Log::print(stats.packetCount, LogLevel::INFO);
+    Log::print((char*)F(", NMRA out of spec="), LogLevel::INFO);
+    Log::print(stats.outOfSpecRejectionCount, LogLevel::INFO);
+    Log::print((char*)F(", Checksum Errors="), LogLevel::INFO);
+    Log::print(stats.checksumError, LogLevel::INFO);
+    Log::print((char*)F(", Lost pkts="), LogLevel::INFO);
+    Log::print(stats.countLostPackets, LogLevel::INFO);
+    Log::print((char*)F(", Long pkts="), LogLevel::INFO);
+    Log::println(stats.countLongPackets, LogLevel::INFO);
 
-    // Calculate and display cpu load
-    unsigned long spareLoopCountPerSec = stats.spareLoopCount / refreshTime;
-    Serial.print(F(",  CPU load: "));
-    Serial.print(
-        100.0f * (1.0f - (float)spareLoopCountPerSec / maxSpareLoopCountPerSec),
-        1);
-    Serial.print(F("%"));
-    Serial.println();
-  }
+    Log::print((char*)F("0 half-bit length (us): "), LogLevel::INFO);
+    if (stats.min0 <= stats.max0) {
+        Log::print((float)stats.total0 / stats.count0, LogLevel::INFO);
+        Log::print((char*)F(" ("), LogLevel::INFO);
+        Log::print(stats.min0, LogLevel::INFO);
+        Log::print((char*)F("-"), LogLevel::INFO);
+        Log::print(stats.max0, LogLevel::INFO);
+        Log::print((char*)F(")"), LogLevel::INFO);
+        Log::print((char*)F(" delta < "), LogLevel::INFO);
+        Log::print((u32_t)stats.max0BitDelta, LogLevel::INFO);
+    } else
+        Log::print(F("<none>"), LogLevel::INFO);
+    Log::println((const char*) "", LogLevel::INFO);
 
-  if (showBitLengths) {
-    Serial.println(F("------ Half-bit count by length (us) -------"));
-    for (int i = minBitLength; i <= maxBitLength; i++) {
-      unsigned long c0 = stats.countByLength[0][i - minBitLength];
-      unsigned long c1 = stats.countByLength[1][i - minBitLength];
-      if (c0 > 0 || c1 > 0) {
-        if (i == minBitLength)
-          Serial.print(F("<="));
-        else if (i == maxBitLength)
-          Serial.print(F(">="));
-        Serial.print(i);
-        Serial.print('\t');
-        Serial.print(c0);
-        Serial.print('\t');
-        Serial.println(c1);
-      }
+    Log::print((char*)F("1 half-bit length (us): "), LogLevel::INFO);
+    if (stats.min1 <= stats.max1) {
+        Log::print((float)stats.total1 / stats.count1, LogLevel::INFO);
+        Log::print((char*)F(" ("), LogLevel::INFO);
+        Log::print(stats.min1, LogLevel::INFO);
+        Log::print((char*)F("-"), LogLevel::INFO);
+        Log::print(stats.max1, LogLevel::INFO);
+        Log::print((char*)F(")"), LogLevel::INFO);
+        Log::print((char*)F(" delta < "), LogLevel::INFO);
+        Log::print(stats.max1BitDelta, LogLevel::INFO);
+    } else
+        Log::print((char*)F("<none>"), LogLevel::INFO);
+    Log::println((const char*) "", LogLevel::INFO);
+
+    if (showCpuStats) {
+        Log::print((char*)F("IRC Duration (us): "), LogLevel::INFO);
+        if (stats.minInterruptTime <= stats.maxInterruptTime) {
+            Log::print((float)stats.totalInterruptTime / stats.count, LogLevel::INFO);
+            Log::print((char*)F(" ("), LogLevel::INFO);
+            Log::print(stats.minInterruptTime, LogLevel::INFO);
+            Log::print((char*)F("-"), LogLevel::INFO);
+            Log::print(stats.maxInterruptTime, LogLevel::INFO);
+            Log::print((char*)F(")"), LogLevel::INFO);
+        } else 
+        Log::print((char*)F("<none>"), LogLevel::INFO);
+
+        // Calculate and display cpu load
+        unsigned long spareLoopCountPerSec = stats.spareLoopCount / refreshTime;
+        stats.cpuLoad = CpuUsage::GetCpuLoad(); //100.0f * (1.0f - (float)spareLoopCountPerSec / maxSpareLoopCountPerSec);
+        Log::print((char*)F(",  CPU load: "), LogLevel::INFO);
+        Log::print(
+            stats.cpuLoad,
+            LogLevel::INFO);
+        Log::print((char*)F("%"), LogLevel::INFO);
+        Log::println((const char*)"", LogLevel::INFO);
     }
-    Serial.println(F("--------------------------------------------"));
-  }
+
+    if (showBitLengths) {
+        Log::println(F("------ Half-bit count by length (us) -------"), LogLevel::INFO);
+        for (int i = minBitLength; i <= maxBitLength; i++) {
+            unsigned long c0 = stats.countByLength[0][i - minBitLength];
+            unsigned long c1 = stats.countByLength[1][i - minBitLength];
+            if (c0 > 0 || c1 > 0) {
+                if (i == minBitLength)
+                    Log::print((char*)F("<="), LogLevel::INFO);
+                else if (i == maxBitLength)
+                    Log::print((char*)F(">="), LogLevel::INFO);
+                Log::print(i, LogLevel::INFO);
+                Log::print('\t', LogLevel::INFO);
+                Log::print(&c0, LogLevel::INFO);
+                Log::print('\t', LogLevel::INFO);
+                Log::println(&c1, LogLevel::INFO);
+            }
+        }
+        Log::println(F("--------------------------------------------"), LogLevel::INFO);    
+    }
+
+    // End of section to group together in log.
+    Log::GiveMultiPrintSection();
 }
 
 // Return a copy of the current set of statistics accumulated.  We could inhibit

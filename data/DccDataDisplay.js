@@ -1,60 +1,26 @@
-var gateway = `ws://${window.location.hostname}/wstrackmeasuring`;
+var gateway = `ws://${window.location.hostname}/wsdccdata`;
 var websocket;
 var configData;
 var statsData;
 
 function initWebSocket() {
-  console.log('Trying to open a Track Measuring WebSocket connection...');
+  console.log('Trying to open a Dcc Data WebSocket connection...');
   websocket = new WebSocket(gateway);
   websocket.onopen    = onOpen;
   websocket.onclose   = onClose; 
 }
 
 function onOpen(event) {
-  console.log('Connection Track Measuring opened');  
+  console.log('Connection Dcc Data opened');  
 }
 function onClose(event) {
-  console.log('Connection Track Measuring closed');
+  console.log('Connection Dcc Data closed');
   setTimeout(initWebSocket, 2000);
 }
 
 window.addEventListener('load', onLoad);
 
 var chart;
-var currentX = 0;
-
-function plotSpeed(jsonValue) {
-
-  var data = jsonValue.Data;
-  console.log(data);
-  var x = ++currentX; // (new Date()).getTime();
-  var y = Number(data.Speed);
-
-  // By definition running (will auto update on reconnect)
-  document.getElementById("btnStart").innerHTML = "Stop";
-  document.getElementById("angle").innerHTML = data.AxisAngle.toFixed(2);
-  document.getElementById("measuredspeed").innerHTML = y.toFixed(2);
-  document.getElementById("direction").innerHTML = y > 0 ? "Forward" : y< 0 ? "Backward" : "Parked";
-  document.getElementById("absdistance").innerHTML = data.AbsDist.toFixed(2);
-  document.getElementById("reldistance").innerHTML = data.RelDist.toFixed(2);
-  document.getElementById("samplingrate").innerHTML = (1000000.0 / data.SamplingRate).toFixed(2);
-
-  var scaleSpeed = (y  * 36 * Number(configData.ScaleList[configData.ScaleIndex].Scale)) / 10000; //[km/h]
-  document.getElementById("scalespeed").innerHTML = scaleSpeed.toFixed(2);
-
-     // if(chart.data.labels.length > 400) {
-      chart.data.datasets[0].data.push({ x: x, y: y });
-      chart.data.datasets[1].data.push({ x: x, y: data.ScaleSpeed });
-      chart.data.datasets[2].data.push({ x: x, y: data.Accel });
-
-      // useful for crosscheck of FW speed.
-//   chart.data.datasets[2].data.push({ x: x, y: scaleSpeed });
-       
-    //} else {
-    //  chartT.series[0].addPoint([x, y], true, false, true);
-   // }
-  chart.update();
-}
 
 function  UpdateDCCStats(jsonValue)
 {
@@ -67,6 +33,7 @@ function  UpdateDCCStats(jsonValue)
     document.getElementById("packetStats").innerHTML = "Valid= " + data.packetCount + ", NMRA out of spec= " + data.outOfSpecRejectionCount + ", Checksum Error= " + data.checksumError + ", Lost= " + data.countLostPackets + ", Long= " + data.countLongPackets;
     document.getElementById("zeroBits").innerHTML = "0 half-bit length (us): " + (data.total0 / data.count0).toFixed(1) + " ("+ data.min0 + " - " + data.max0 + ") delta < " + data.max0BitDelta;
     document.getElementById("oneBits").innerHTML = "1 half-bit length (us): " + (data.total1 / data.count1).toFixed(1) + " ("+ data.min1 + " - " + data.max1 + ") delta < " + data.max1BitDelta;
+    document.getElementById("cpu").innerHTML = "IRC Duration (us): " + (data.ircTime / data.count).toFixed(1) + " ("+ data.minIrcTime +"-"+ data.maxIrcTime +"),  CPU load:" + data.cpuLoad.toFixed(1) + "%"
 }
 
 function  UpdateDCCPackets(jsonValue)
@@ -74,30 +41,78 @@ function  UpdateDCCPackets(jsonValue)
   var data = jsonValue.DccBytes;
   console.log(data);
 
-  document.getElementById("dccPacketOne").innerHTML = data.PacketZero;
-  document.getElementById("dccPacketTwo").innerHTML = data.PacketOne;
-  document.getElementById("dccPacketThree").innerHTML = data.PacketTwo;
-  document.getElementById("dccPacketFour").innerHTML = data.PacketThree;
+  document.getElementById("dccPacketOne").innerHTML = "1:  " + data.PacketZero;
+  document.getElementById("dccPacketTwo").innerHTML = "2:  " + data.PacketOne;
+  document.getElementById("dccPacketThree").innerHTML = "3:  " + data.PacketTwo;
+  document.getElementById("dccPacketFour").innerHTML = "4:  " + data.PacketThree;
+  document.getElementById("dccPacketFive").innerHTML = "5:  " + data.PacketFour;
+  document.getElementById("dccPacketSix").innerHTML = "6:  " + data.PacketFive;
+  document.getElementById("dccPacketSeven").innerHTML = "7:  " + data.PacketSix;
+  document.getElementById("dccPacketEight").innerHTML = "8:  " + data.PacketSeven;
 
-  document.getElementById("dccPacketFive").innerHTML = data.PacketZeroInterval[0];
-
-  var psuedoTime = 0;
-
-  chart.data.datasets[0].data.cl
-
-  chart.data.datasets[0].data.length = 0;
+  var firstZeroBit = 0;
 
   // Zero is num intervals
-  for(let i = 1; i <= 20; i+=2)
+  for(var j = 1; j < data.PacketZeroInterval[0]; j++)
+  {
+        if(data.PacketZeroInterval[j] <= 80)
+            continue;
+         firstZeroBit = j;
+         break;
+  }
+
+  if(firstZeroBit < 18)
+    return; // Invalid packet. Should never get here as DCC inspector does not allow this.
+
+  // only display previous 8 bits of preamble.
+  firstZeroBit++;
+  var psuedoTime = 0;
+  chart.data.datasets[0].data.length = 0;
+  chart.data.datasets[0].data.push({ x: psuedoTime, y: -0.5});
+
+  // Extract preamble timings.
+  var i = 0;
+  for(i = firstZeroBit - 17; i < firstZeroBit; i+=2)
   {    
     psuedoTime += data.PacketZeroInterval[i];    
-    chart.data.datasets[0].data.push({ x: psuedoTime, y: 0.0});    
-    chart.data.datasets[0].data.push({ x: psuedoTime, y: 5.0});
+    chart.data.datasets[0].data.push({ x: psuedoTime, y: -0.5});    
+    chart.data.datasets[0].data.push({ x: psuedoTime, y: -4.5});
 
     psuedoTime += data.PacketZeroInterval[i + 1];
-    chart.data.datasets[0].data.push({ x: psuedoTime, y: 5.0});
-    chart.data.datasets[0].data.push({ x: psuedoTime, y: 0.0});
+    chart.data.datasets[0].data.push({ x: psuedoTime, y: -4.5});
+    chart.data.datasets[0].data.push({ x: psuedoTime, y: -0.5});
   }
+
+  // First DCC byte (after preamble).
+  firstZeroBit++;
+
+    var dataByteCount = 1;
+    while(firstZeroBit < data.PacketZeroInterval.length)
+    {
+        psuedoTime = 0;
+        chart.data.datasets[dataByteCount].data.length = 0;
+        chart.data.datasets[dataByteCount].data.push({ x: psuedoTime, y: -0.5 - dataByteCount * 5.0});
+
+        for(i = firstZeroBit; i < firstZeroBit + 18; i+=2)
+        {        
+            psuedoTime += data.PacketZeroInterval[i];    
+            chart.data.datasets[dataByteCount].data.push({ x: psuedoTime, y: -0.5 - dataByteCount * 5.0});    
+            chart.data.datasets[dataByteCount].data.push({ x: psuedoTime, y: -4.5 - dataByteCount * 5.0});
+
+            psuedoTime += data.PacketZeroInterval[i + 1];
+            chart.data.datasets[dataByteCount].data.push({ x: psuedoTime, y: -4.5 - dataByteCount * 5.0});
+            chart.data.datasets[dataByteCount].data.push({ x: psuedoTime, y: -0.5 - dataByteCount * 5.0});
+        }
+
+        // Next DCC byte.
+        firstZeroBit+=18;
+        dataByteCount++;
+    }
+
+    for(var j = dataByteCount; j < chart.data.datasets.length; j++)
+    {
+        chart.data.datasets[j].data.length = 0;
+    }
 
   chart.update();
 }
@@ -114,7 +129,7 @@ function  UpdateFooter()
   document.getElementById("ipaddress").innerHTML = statsData.ipaddress;
   document.getElementById("fwversion").innerHTML = statsData.version;
   
-  document.getElementById("systemuptime").innerHTML = formatTime(Math.trunc(statsData.uptime/1000)); 
+  document.getElementById("systemuptime").innerHTML = formatTime(Math.trunc(statsData.uptime/1000)) + ' / ' + statsData.cpuload.toFixed(2) + '%'; 
   document.getElementById("signalstrength").innerHTML = statsData.sigstrength  + " dBm";
   document.getElementById("ramflash").innerHTML = statsData.freemem + " / " + statsData.freeflash + " Bytes";
 
@@ -124,38 +139,29 @@ function  UpdateFooter()
 }
 
 if (!!window.EventSource) {
-  var source = new EventSource('/eventstrackmeasuring');
+  var source = new EventSource('/eventsdccdata');
 
   source.addEventListener('open', function(e) {
-    console.log("Track Measuring Events Connected");    
+    console.log("Track Dcc Data Connected");    
   }, false);
 
   source.addEventListener('error', function(e) {
     if (e.target.readyState != EventSource.OPEN) {
-      console.log("Track Measuring Events Disconnected");      
+      console.log("Track Dcc Data Disconnected");      
     }
   }, false);
 
-  source.addEventListener('message', function(e) {
-    //console.log("Track Measuring message", e.data);
-  }, false);
-
-  source.addEventListener('SpeedData', function(e) {
-    //console.log("Track Measuring new_readings", e.data);
+  source.addEventListener('DccStats', function(e) {    
     var myObj = JSON.parse(e.data);
-//    console.log(myObj);
     UpdateDCCStats(myObj);
   }, false);
 
   source.addEventListener('PacketBytes', function(e) {
-    //console.log("Track Measuring new_readings", e.data);
     var myObj = JSON.parse(e.data);
-//    console.log(myObj);
     UpdateDCCPackets(myObj);
   }, false);
 
   source.addEventListener('CfgData', function(e) {
-    //console.log("Track Measuring new_readings", e.data);
     var myObj = JSON.parse(e.data);
     console.log(myObj);
     configData = myObj["Data"];
@@ -163,7 +169,6 @@ if (!!window.EventSource) {
   }, false);
 
   source.addEventListener('STATS', function(e) {
-    //console.log("Track Measuring new_readings", e.data);
     var myObj = JSON.parse(e.data);
     console.log(myObj);
     statsData = myObj["Data"];
@@ -186,7 +191,7 @@ function initChart(){
     exportEnabled: true,
     data: {
       datasets: [{
-        label: "Measured Speed [mm/s]",
+        label: "Preamble",
         borderWidth: 1,
         pointRadius: 2,
         backgroundColor: '#80C080',
@@ -195,79 +200,79 @@ function initChart(){
         showLine: true
       },
       {
-        label:"Scale Speed [km/h]",
+        label:"Address",
         borderWidth: 1,
         pointRadius: 2,
         backgroundColor: '#8080C0',
         borderColor: '#8080C0',
-        yAxisID: 'y1',
+        yAxisID: 'y',
         showLine: true
-      },
-    //   {
-    //     label:"Scale FW [km/h]",
-    //     borderWidth: 1,
-    //     pointRadius: 2,
-    //     backgroundColor: '#C08080',
-    //     borderColor: '#C08080',
-    //     yAxisID: 'y1',
-    //     showLine: true
-    //   },
+      },   
       {
-        label:"Accel [km/h s]",
+        label:"Instruction",
         borderWidth: 1,
         pointRadius: 2,
         backgroundColor: '#C08080',
         borderColor: '#C08080',
-        yAxisID: 'y2',
+        yAxisID: 'y',
+        showLine: true
+      },
+      {
+        label:"Error",
+        borderWidth: 1,
+        pointRadius: 2,
+        backgroundColor: '#80C0C0',
+        borderColor: '#80C0C0',
+        yAxisID: 'y',
+        showLine: true
+      },
+      {
+        label:"Byte4",
+        borderWidth: 1,
+        pointRadius: 2,
+        backgroundColor: '#C080C0',
+        borderColor: '#C080C0',
+        yAxisID: 'y',
+        showLine: true
+      },
+      {
+        label:"Byte5",
+        borderWidth: 1,
+        pointRadius: 2,
+        backgroundColor: '#C0C080',
+        borderColor: '#C0C080',
+        yAxisID: 'y',
+        showLine: true
+      },
+      {
+        label:"Byte6",
+        borderWidth: 1,
+        pointRadius: 2,
+        backgroundColor: '#C0A080',
+        borderColor: '#C0A080',
+        yAxisID: 'y',
         showLine: true
       }],
     },
     options: {
+      animation: false,
       borderWidth: 3,
       borderColor: ["rgba(255, 99, 132, 128)"],
       scales: {
         x: {
             title: {
                 display: true,
-                text: 'Samples [count]'
+                text: 'Interval time [\u03BCs]'
                 }
         }, 
         y: {
             title: {
                 display: true,
-                text: 'Measured Speed [mm/s]'
+                text: 'Relative Logic level [hi/lo]'
             },
             type: 'linear',
             display: true,
             position: 'left',
-        },
-        y1: {
-            title: {
-                display: true,
-                text: 'Scale Speed [km/h]'
-            },
-            type: 'linear',
-            display: true,
-            position: 'right',
-  
-            // grid line settings
-            grid: {
-            drawOnChartArea: false, // only want the grid lines for one axis to show up
-            },
-        },
-        y2: {
-            title: {
-                display: true,
-                text: 'Scale Accel [km/h s]'
-            },
-            type: 'linear',
-            display: true,
-            position: 'right',
-  
-            // grid line settings
-            grid: {
-            drawOnChartArea: false, // only want the grid lines for one axis to show up
-            },
         }
       }           
     },    

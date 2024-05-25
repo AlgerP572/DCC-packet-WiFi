@@ -6,6 +6,7 @@
 #include <esp_log.h>
 #include <driver/temp_sensor.h>
 #include "DCCStatistics.h"
+#include "StringBuilder.h"
 
 class DCCPacketDecoderModule
 {
@@ -13,21 +14,22 @@ class DCCPacketDecoderModule
 public:
     static void setup();
     static void begin();
-    static void loop();
+    static bool loop();
+    static void task(void* data);
 
     static Statistics GetLastKnwonStats();
     static void GetDCCPacketStats(String& jsonData, Statistics& lastKnownStats);
-    static void GetDCCPacketBytes(String& jsonData, Statistics& stats);
+    static void GetDCCPacketBytes(String& jsonData);
     static unsigned int GetRefreshDelay();
     static void SetRefreshDelay(unsigned int delay);
+    static bool processCommands(const char* command, int length);
 
 private:
     static Statistics _lastKnownStats;
 
     static void clearHashList();
-    static bool processDCC(Print &output);
-    static void DecodePacket(Print &output, int inputPacket, bool isDifferentPacket);
-    static bool processCommands();
+    static bool processDCC(StringBuilder &output);
+    static void DecodePacket(StringBuilder &sbTemp, int inputPacket, bool isDifferentPacket);
     static void printPacketBits(Print &output, int index);
     static void printPacketIntervals(Print &output, int index);
 };

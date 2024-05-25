@@ -1,13 +1,14 @@
 #include "NTPTimeClient.h"
-#include "WebPageTrackMeasuring.h"
+#include "WebPageDccData.h"
 #include "WifiSerialDebug.h"
 
 #include "DCCpacketWifiModule.h"
 #include "DCCPacketDecoderModule.h"
 #include "ConfigLoader.h"
+#include "CpuUsage.h"
 
 
-char WebPageTrackMeasuring::_html[] PROGMEM = R"rawliteral(
+char WebPageDccData::_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html>
 <head>
   <title>WiFi DCC Packet Viewer</title>
@@ -30,15 +31,15 @@ char WebPageTrackMeasuring::_html[] PROGMEM = R"rawliteral(
     <div class="tool-bar">        
         <a href="/">
             <button class="btn-group">DCC Data</button>
-        </a>       
+        </a>
         <a href="/update">
             <button>FW Update</button>
+        </a>        
+        <a href="/wifilog">
+            <button>Wifi Log</button>
         </a>
-        <a href="/webserial">
-            <button>Log</button>
-        </a>
-        <h1>DCC Packet Display</h1>
-    </div>
+        <h1>DCC Packet Display</h1>     
+    </div>    
   </div>
   <div class="content">
     <div class="card-grid">
@@ -50,7 +51,7 @@ char WebPageTrackMeasuring::_html[] PROGMEM = R"rawliteral(
         </div>                            
         <p><table class="datatable">
         <tr>
-          <th>DCC Statitics</th>                   
+          <th>DCC Statistics</th>                   
         </tr>
          <tr>          
           <td><span id="bitCount">%DCCbitcount%</span></td>                
@@ -65,31 +66,31 @@ char WebPageTrackMeasuring::_html[] PROGMEM = R"rawliteral(
           <td><span id="oneBits">%oneBits%</span></td>        
         </tr>
         <tr>        
-          <td><span id="direction">--</span></td>        
+          <td><span id="cpu">--</span></td>        
         </tr>
         <tr>
           <td><span id="dccPacketOne">%dccPacketOne%</span></td>     
         </tr>
         <tr>
-          <td><span id="dccPacketTwo">%dccPacketOne%</span></td>     
+          <td><span id="dccPacketTwo">%dccPacketTwo%</span></td>     
         </tr>
         <tr>
-          <td><span id="dccPacketThree">%dccPacketOne%</span></td>     
+          <td><span id="dccPacketThree">%dccPacketThree%</span></td>     
         </tr>
         <tr>
-          <td><span id="dccPacketFour">%dccPacketOne%</span></td>     
+          <td><span id="dccPacketFour">%dccPacketFour%</span></td>     
         </tr>
         <tr>
-          <td><span id="dccPacketFive">%dccPacketOne%</span></td>     
+          <td><span id="dccPacketFive">%dccPacketFive%</span></td>     
         </tr>
         <tr>
-          <td><span id="dccPacketSix">%dccPacketOne%</span></td>     
+          <td><span id="dccPacketSix">%dccPacketSix%</span></td>     
         </tr>
         <tr>
-          <td><span id="dccPacketSeven">%dccPacketOne%</span></td>     
+          <td><span id="dccPacketSeven">%dccPacketSeven%</span></td>     
         </tr>
         <tr>
-          <td><span id="dccPacketEight">%dccPacketOne%</span></td>     
+          <td><span id="dccPacketEight">%dccPacketEight%</span></td>     
         </tr>
       </table></p>
       </div>      
@@ -105,46 +106,46 @@ char WebPageTrackMeasuring::_html[] PROGMEM = R"rawliteral(
   <div class="topnav">
     <p><table class="footertable">
       <tr>
-        <td>Date / Time</th>
-        <td><span id="datetime">%datetime%</span></th>
-        <td>IP Address</th>
-        <td><span id="ipaddress">%ipaddress%</span></th>
-        <td>Firmware Version</th>
-        <td><span id="fwversion">%fwversion%</span></th>    
+        <td>Date / Time</td>
+        <td><span id="datetime">%datetime%</span></td>
+        <td>IP Address</td>
+        <td><span id="ipaddress">%ipaddress%</span></td>
+        <td>Firmware Version</td>
+        <td><span id="fwversion">%fwversion%</span></td>    
       </tr>
       <tr>
-        <td>System Uptime</th>
-        <td><span id="systemuptime">%dsystemuptime%</span></th>
+        <td>System Uptime / Cpu Load</td>
+        <td><span id="systemuptime">%systemuptime%</span></td>
         <td>Signal Strength</th>
-        <td><span id="signalstrength">%signalstrength%</span></th>
-        <td>Available RAM/Flash</th>
-        <td><span id="ramflash">%ramflash%</span></th>    
+        <td><span id="signalstrength">%signalstrength%</span></td>
+        <td>Available RAM/Flash</td>
+        <td><span id="ramflash">%ramflash%</span></td>    
       </tr>
       <tr>
-        <td>Core Temp</th>
-        <td><span id="coretemp">%coretemp%</span></th>
-        <td>Access Point</th>
-        <td><span id="accesspoint">%accesspoint%</span></th>
-        <td>Available SPIFFS</th>
-        <td><span id="spiffs">%spiffs%</span></th>    
+        <td>Core Temp</td>
+        <td><span id="coretemp">%coretemp%</span></td>
+        <td>Access Point</td>
+        <td><span id="accesspoint">%accesspoint%</span></td>
+        <td>Available SPIFFS</td>
+        <td><span id="spiffs">%spiffs%</span></td>    
       </tr>      
     </table></p>
   </div>
     <script src="canvasjsascsv.min.js"></script>
     <script src="papaparse.min.js"></script> 
-    <script src="TrackMeasuringDisplay.js"></script>  
+    <script src="DccDataDisplay.js"></script>  
 </body>
 </html>)rawliteral";
 
-AsyncWebSocket WebPageTrackMeasuring::_ws("/wstrackmeasuring");
-AsyncEventSource WebPageTrackMeasuring::_events("/eventstrackmeasuring");
-unsigned long WebPageTrackMeasuring::_lastTime = 0;
-unsigned long WebPageTrackMeasuring::_lastTimeDCC = 0;
-unsigned long WebPageTrackMeasuring::_timerDelay = 1000;
-int WebPageTrackMeasuring::_millisRollOver = 0;
-unsigned long WebPageTrackMeasuring::_lastMillis = 0;
+AsyncWebSocket WebPageDccData::_ws("/wsdccdata");
+AsyncEventSource WebPageDccData::_events("/eventsdccdata");
+unsigned long WebPageDccData::_lastTime = 0;
+unsigned long WebPageDccData::_lastTimeDCC = 0;
+unsigned long WebPageDccData::_timerDelay = 1000;
+int WebPageDccData::_millisRollOver = 0;
+unsigned long WebPageDccData::_lastMillis = 0;
 
-void WebPageTrackMeasuring::handleWebSocketMessage(void *arg, uint8_t *data, size_t len)
+void WebPageDccData::handleWebSocketMessage(void *arg, uint8_t *data, size_t len)
 {
     AwsFrameInfo *info = (AwsFrameInfo *)arg;
     Log::println("WebSocket event", LogLevel::INFO);
@@ -198,8 +199,10 @@ void WebPageTrackMeasuring::handleWebSocketMessage(void *arg, uint8_t *data, siz
             String cmdType = doc["Type"];
             String fileName = doc["FileName"];
             
+            Log::TakeMultiPrintSection();
             Log::print("Request for config file: ", LogLevel::INFO);
             Log::println(fileName, LogLevel::INFO);
+            Log::GiveMultiPrintSection();
 
             String cmdMsg;
             cmdMsg.reserve(512);
@@ -231,33 +234,53 @@ void WebPageTrackMeasuring::handleWebSocketMessage(void *arg, uint8_t *data, siz
     }
 }
 
-void WebPageTrackMeasuring::onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
+void WebPageDccData::onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
                                     void *arg, uint8_t *data, size_t len)
 { 
     switch (type)
     {
-    case WS_EVT_CONNECT:           
+    case WS_EVT_CONNECT: 
+        Log::TakeMultiPrintSection();        
         Log::print("WebSocket client #", LogLevel::INFO);
         Log::print(client->id(), LogLevel::INFO);
         Log::print(" connected from ", LogLevel::INFO);
         Log::println(client->remoteIP().toString().c_str(), LogLevel::INFO);        
+        Log::GiveMultiPrintSection();
         break;
-    case WS_EVT_DISCONNECT:       
+    case WS_EVT_DISCONNECT:
+        Log::TakeMultiPrintSection();
         Log::print("WebSocket client # ", LogLevel::INFO);
         Log::print(client->id(), LogLevel::INFO);
         Log::println(" disconnected", LogLevel::INFO);        
+        Log::GiveMultiPrintSection();
         break;
     case WS_EVT_DATA:
         handleWebSocketMessage(arg, data, len);
         break;
     case WS_EVT_PONG:
+        Log::TakeMultiPrintSection();   
+        Log::print("WS Pong Id: ", LogLevel::DEBUG);
+        Log::println(client->id(), LogLevel::DEBUG);
+        Log::GiveMultiPrintSection();
+        break;
     case WS_EVT_ERROR:
+        Log::TakeMultiPrintSection();  
+        Log::print("WS Error Id: ", LogLevel::ERROR);
+        Log::println(client->id(), LogLevel::ERROR);
+        Log::GiveMultiPrintSection();
         break;
     }
 }
 
-void WebPageTrackMeasuring::begin(AsyncWebServer *server)
+void WebPageDccData::begin(AsyncWebServer *server)
 {
+    if (server == nullptr)
+    {
+        // Handle the error appropriately       
+        Log::println("Error: Server instance is null", LogLevel::ERROR);
+        return;
+    }
+
     _ws.onEvent(onEvent);
     server->addHandler(&_ws);
 
@@ -266,8 +289,10 @@ void WebPageTrackMeasuring::begin(AsyncWebServer *server)
     {
         if(client->lastId())
         {
+            Log::TakeMultiPrintSection();
             Log::print("Client reconnected! Last message ID that it got is: ", LogLevel::INFO);
-            Log::println(client->lastId(), LogLevel::INFO);        
+            Log::println(client->lastId(), LogLevel::INFO);
+            Log::GiveMultiPrintSection();
         }
 
         // send event with message "hello!", id current millis
@@ -287,12 +312,12 @@ void WebPageTrackMeasuring::begin(AsyncWebServer *server)
     });   
 }
 
-String WebPageTrackMeasuring::processor(const String& var)
+String WebPageDccData::processor(const String& var)
 {
     return String();
 }
 
-void WebPageTrackMeasuring::loop()
+bool WebPageDccData::loop()
 {
     if (millis() < _lastMillis)
         _millisRollOver++; // update ms rollover counter
@@ -301,9 +326,55 @@ void WebPageTrackMeasuring::loop()
 
     if (_ws.count() == 0)
     {
-        return;
+        return false;
     }
-    _ws.cleanupClients();
+    _ws.cleanupClients();    
+
+    if ((millis() - _lastTimeDCC) > (DCCPacketDecoderModule::GetRefreshDelay() * 1000))
+    {
+
+        if(DCCPacketDecoderModule::GetRefreshDelay() <= 1)
+        {
+            // THis is for capture mode. After the one capture is
+            // complete turn off.
+            DCCPacketDecoderModule::SetRefreshDelay(86400);
+        }
+
+
+        // Get speed data
+        String latestDCCData;
+        latestDCCData.reserve(1024);
+
+        // Ensure DCCPacketDecoderModule::loop is called before this loop in main.
+        // DCCPacketDecoderModule::loop will capture the latest stats for us.  This
+        // was done to preserve the original code as much as possible. It also helps
+        // to maintain coherency between loops so they report the same stats.
+        Statistics stats = DCCPacketDecoderModule::GetLastKnwonStats();
+        
+        DCCPacketDecoderModule::GetDCCPacketStats(latestDCCData, stats);
+        if (latestDCCData.isEmpty() == false)
+        {
+            Log::println(latestDCCData.c_str(), LogLevel::LOOP);
+            _events.send(latestDCCData.c_str(),
+                         "DccStats",
+                         millis());
+        }
+
+        String latestDCCPackets;
+        latestDCCPackets.reserve(1024);
+
+        DCCPacketDecoderModule::GetDCCPacketBytes(latestDCCPackets);
+        if (latestDCCPackets.isEmpty() == false)
+        {
+            Log::println(latestDCCPackets.c_str(), LogLevel::LOOP);
+            _events.send(latestDCCPackets.c_str(),
+                         "PacketBytes",
+                         millis());
+        }
+
+        _lastTimeDCC = millis();
+        return true;
+    }
 
     if ((millis() - _lastTime) > _timerDelay)
     {
@@ -323,77 +394,34 @@ void WebPageTrackMeasuring::loop()
 
         _lastTime = millis();
     }
-
-    if ((millis() - _lastTimeDCC) > (DCCPacketDecoderModule::GetRefreshDelay() * 1000))
-    {
-
-        if(DCCPacketDecoderModule::GetRefreshDelay() <= 1)
-        {
-            // THis is for capture mode. After the one capture is
-            // complete turn off.
-            DCCPacketDecoderModule::SetRefreshDelay(86400);
-        }
-
-
-        // Get speed data
-        String latestSpeedData;
-        latestSpeedData.reserve(1024);
-
-        // Ensure DCCPacketDecoderModule::loop is called before this loop in main.
-        // DCCPacketDecoderModule::loop will capture the latest stats for us.  This
-        // was done to preserve the original code as much as possible. It also helps
-        // to maintain coherency between loops so they report the same stats.
-        Statistics stats = DCCPacketDecoderModule::GetLastKnwonStats();
-        
-        DCCPacketDecoderModule::GetDCCPacketStats(latestSpeedData, stats);
-        if (latestSpeedData.isEmpty() == false)
-        {
-            Log::println(latestSpeedData.c_str(), LogLevel::LOOP);
-            _events.send(latestSpeedData.c_str(),
-                         "SpeedData",
-                         millis());
-        }
-
-        String latestDCCPackets;
-        latestDCCPackets.reserve(1024);
-
-        DCCPacketDecoderModule::GetDCCPacketBytes(latestDCCPackets, stats);
-        if (latestDCCPackets.isEmpty() == false)
-        {
-            Log::println(latestDCCPackets.c_str(), LogLevel::LOOP);
-            _events.send(latestDCCPackets.c_str(),
-                         "PacketBytes",
-                         millis());
-        }
-
-        _lastTimeDCC = millis();        
-    }
+    return false;
 }
 
-void WebPageTrackMeasuring::GetStats(String& jsonData)
+void WebPageDccData::GetStats(String& jsonData)
 {
     JsonDocument doc;
 
     doc["Cmd"] = "STATS";
-    JsonObject Data = doc["Data"].to<JsonObject>();
+    JsonObject data = doc["Data"].to<JsonObject>();
     float float1 = (_millisRollOver * 4294967296) + millis(); // calculate millis including rollovers
-    Data["uptime"] = round(float1);
+    data["uptime"] = round(float1);
 
    
     String formattedTime;
     TimeClient::getFormattedDate(formattedTime);
-    Data["systime"] = formattedTime;
-    Data["freemem"] = String(ESP.getFreeHeap());
-    Data["freeflash"] = String(ESP.getFlashChipSize());
-    Data["totaldisk"] = String(SPIFFS.totalBytes());
-    Data["useddisk"] = String(SPIFFS.usedBytes());
-    Data["freedisk"] = String(SPIFFS.totalBytes() - SPIFFS.usedBytes());
-    Data["version"] = VERSION;
-    Data["ipaddress"] = WiFi.localIP().toString();
-    Data["sigstrength"] = WiFi.RSSI();
-    Data["apname"] = WiFi.SSID();
+    data["systime"] = formattedTime;
+    data["cpuload"] = CpuUsage::GetCpuLoad();    
+    data["freemem"] = String(ESP.getFreeHeap());
+    data["freeflash"] = String(ESP.getFlashChipSize());
+    data["totaldisk"] = String(SPIFFS.totalBytes());
+    data["useddisk"] = String(SPIFFS.usedBytes());
+    data["freedisk"] = String(SPIFFS.totalBytes() - SPIFFS.usedBytes());
+    data["version"] = VERSION;
+    data["ipaddress"] = WiFi.localIP().toString();
+    data["sigstrength"] = WiFi.RSSI();
+    data["apname"] = WiFi.SSID();
 
-    Data["temp"] = DCCpacketWifiModule::ReadCoreTemp();    
+    data["temp"] = DCCpacketWifiModule::ReadCoreTemp();    
 
     serializeJson(doc, jsonData);
 }

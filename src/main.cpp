@@ -2,11 +2,13 @@
 #include <SPIFFS.h>
 
 #include "WebServer.h"
-#include "WebPageTrackMeasuring.h"
+#include "WebPageDccData.h"
+#include "WebPageWifiLog.h"
 #include "WifiConnection.h"
 #include "WifiSerialDebug.h"
 #include "WifiFirmware.h"
 #include "NTPTimeClient.h"
+#include "CpuUsage.h"
 
 #include "DCCpacketWifiModule.h"
 #include "DCCPacketDecoderModule.h"
@@ -63,7 +65,7 @@ void setup()
 
     // This needs to be before anything that will acess SPIFFS data
     // like config files.
-    if(!SPIFFS.begin(true))
+    if(SPIFFS.begin(true) == false)
     {
         // Chicken and egg here.  Can't use LOG since its not started yet
         // but we might want to put cfg data to control the log so this
@@ -78,39 +80,51 @@ void setup()
     // The next line starts the servcies required for OTA
     // logging. Anything using OTA logging including web
     // pages must be after this line.
-    Log::begin(server);
+    Log::begin(WebPageWifiLog::GetEvents());
   
     // Start supported services
-    WebPageTrackMeasuring::begin(server);
+    WebPageDccData::begin(server);
+    WebPageWifiLog::begin(server);
     WifiFirmware::begin(server);
     WebServer::begin();
-  
+
+    CpuUsage::setup();
 
     // Start underlying hardware modules
     DCCpacketWifiModule::setup();
     DCCPacketDecoderModule::setup();
+    WebPageWifiLog::AddCustomCommandProcessor(DCCPacketDecoderModule::processCommands);
          
     // Metro ESP32-S3 no screen.
 //    M5.Lcd.println("HTTP server started"); 
 
     // The Metro ESP32-S3 has no screen.
      Serial.println("HTTP server started");
+
+    // After this point use Serial logging functions as
+    // spareingly as possible.  The Log class should handle
+    // as much as the serial traffic as possible.  This
+    // will avoid race conditions since it it Multi-task safe.
+    Log::setup();    
 }
 
 void loop()
 { 
-    u32_t time = millis();    
+    u32_t currentTime = millis();  
 
     if(!TimeClient::update())
     {
         TimeClient::forceUpdate();
     }
     
-    if ((time - _lastTime) > _timerDelay)
+    if ((currentTime - _lastTime) > _timerDelay)
     {
+        Log::TakeMultiPrintSection();
         Log::print("Time: ", LogLevel::WATCHDOG);
-        Log::println(time, LogLevel::WATCHDOG);
-        _lastTime = time;
+        Log::println(currentTime, LogLevel::WATCHDOG);
+        Log::GiveMultiPrintSection();
+
+        _lastTime = currentTime;
         
         // The formattedDate comes with the following format:
         // 2018-05-28T16:00:13Z
@@ -120,19 +134,28 @@ void loop()
         Log::println(formattedTime, LogLevel::WATCHDOG);
     }
 
-    delay(2);
-
-    // Important this must be before any other web pages
+    // Important DCCPacketDecoderModule must be before any other web pages
     // or modules that access the DCC packet stats.
     // This line captures the current DCC statistics
     // and caches the results. Latest results can
-    // be retrieved with DCCPacketDecoderModule::GetLastKnwonStats()
-    DCCPacketDecoderModule::loop();
-
-    delay(2);
-    WebPageTrackMeasuring::loop();
+    // be retrieved with DCCPacketDecoderModule::GetLastKnwonStats()   
+    if(DCCPacketDecoderModule::loop() == false)
+    if(WebPageDccData::loop() == false)
+    if(WebPageWifiLog::loop() == false)
+    if(Log::loop() == false);
+    // The above odd if statement is trying to stagger the tasks
+    // so they run semi round robin one at at time...
    
-    // This will "feed the watchdog".
-    delay(2);
-    return;  
+    // Giving the maximum time for other taks to execute.
+    // Trying to keep this loop running at 10 Hz to service
+    // UI requests web socket events etc.
+    u32_t endTime = millis();
+    u32_t loopTime = endTime - currentTime;
+    Log::print("loopTime: ", LogLevel::LOOP);
+    Log::println((int) loopTime, LogLevel::LOOP);
+
+    long loopTaskTime = 100u - loopTime;
+    long loopDelay = std::max(loopTaskTime, (long) 100);
+   
+    delay(loopDelay);   
 }

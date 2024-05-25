@@ -1,5 +1,5 @@
-#ifndef WebPageTrackMeasuring_h
-#define WebPageTrackMeasuring_h
+#ifndef WebPageDccData_h
+#define WebPageDccData_h
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -9,7 +9,7 @@
 #include <SPIFFS.h>
 #include <version.h>
 
-class WebPageTrackMeasuring
+class WebPageDccData
 {
 
 private: 
@@ -33,7 +33,7 @@ private:
 
 public:
     static void begin(AsyncWebServer* server);
-    static void loop();
+    static bool loop();
 };
 
-#endif
+#endif // WebPageDccData_h

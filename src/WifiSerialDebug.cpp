@@ -1,5 +1,6 @@
 
 #include "WifiSerialDebug.h"
+#include "NTPTimeClient.h"
 
 LogLevel Log::_logLevel = // default log levels
     LogLevel::SERIALONOFF |
@@ -9,27 +10,48 @@ LogLevel Log::_logLevel = // default log levels
     LogLevel::ERROR;
 
 std::map<String, SerialDebugCommands>  Log::_debugCommands;
+std::map<int, String>  Log::_logLevelNames;
 
-void Log::recvDebugDataMsg(uint8_t *data, size_t len)
+char logBuffer[1024];
+WebEventSourcePrint Log::_eventsSerial;
+BufferedLogWriter Log::_logWriter(logBuffer, sizeof(logBuffer));
+
+unsigned long Log::_lastMillis = 0;
+TaskHandle_t Log::logTask;
+SemaphoreHandle_t Log::xMultiPrintMutex;
+
+SerialDebugCommands Log::recvDebugDataMsg(const char* data, size_t len)
 {   
-    String d = "";
-    for(int i=0; i < len; i++){
-        d += char(data[i]);
-    }   
+    String d(data, len);
+    SerialDebugCommands result = SerialDebugCommands::cmdNone;
+    Log::println(data, LogLevel::DEBUG);    
+   
+    auto it = _debugCommands.find(d);
+    if(it == _debugCommands.end())
+    {
+        Log::print("Unknown cmd = ", LogLevel::DEBUG);
+        Log::println(d, LogLevel::DEBUG);
+        return result;
+    }
 
-    switch(_debugCommands[d])
+    result =it->second;
+    switch(result)
     {
         case cmdSerialOn:
            _logLevel = _logLevel | LogLevel::SERIALONOFF;
+           _logWriter.SetSerialOn();
         break;
         case cmdSerialOff:
-           _logLevel = _logLevel = _logLevel & ~LogLevel::SERIALONOFF;
+           _logLevel = _logLevel & ~LogLevel::SERIALONOFF;
+           _logWriter.SetSerialOff();
         break;
         case cmdWifiOn:
             _logLevel = _logLevel | LogLevel::WIFIONOFF;
+            _logWriter.SetWifiOn();
         break;
         case cmdWifiOff:
             _logLevel = _logLevel & ~LogLevel::WIFIONOFF;
+            _logWriter.SetWifiOff();
         break;
         case cmdInfoOn:
             _logLevel = _logLevel | LogLevel::INFO;
@@ -61,90 +83,243 @@ void Log::recvDebugDataMsg(uint8_t *data, size_t len)
         case cmdWatchdogOff:
             _logLevel = _logLevel & ~LogLevel::WATCHDOG;
         break;
+        case cmdTimeStampsOn:
+            _logLevel = _logLevel | LogLevel::TIMESTAMPS;
+        break;
+        case cmdTImeStampsOff:
+             _logLevel = _logLevel & ~LogLevel::TIMESTAMPS;
+        break;
+        case cmdPrintLevelOn:
+            _logLevel = _logLevel | LogLevel::PRINTLEVEL;
+        break;
+        case cmdPrintLevelOff:
+             _logLevel = _logLevel & ~LogLevel::PRINTLEVEL;
+        break;
         default:
+
+            // Should never get here.
+            result = SerialDebugCommands::cmdNone;
+            Log::print("Unknown cmd = ", LogLevel::DEBUG);
+            Log::println(d, LogLevel::DEBUG);
         break;
     }
+    return result;
 }
 
 void  Log::InitializeCommands()
 {
-    _debugCommands["serial:on"] = cmdSerialOn;
-    _debugCommands["serial:off"] = cmdSerialOff; 
-    _debugCommands["wifi:on"] = cmdWifiOn;
-    _debugCommands["wifi:off"] = cmdWifiOff; 
-    _debugCommands["info:on"] = cmdInfoOn;
-    _debugCommands["info:off"] = cmdInfoOff; 
-    _debugCommands["debug:on"] = cmdDebugOn;
-    _debugCommands["debug:off"] = cmdDebugOff; 
-    _debugCommands["error:on"] = cmdErrorOn;
-    _debugCommands["error:off"] = cmdErrorOff; 
-    _debugCommands["loop:on"] = cmdLoopOn;
-    _debugCommands["loop:off"] = cmdLoopOff; 
-    _debugCommands["watchdog:on"] = cmdWatchdogOn;
-    _debugCommands["watchdog:off"] = cmdWatchdogOff;   
+    _debugCommands = {
+        {"serial:on", cmdSerialOn},
+        {"serial:off", cmdSerialOff},
+        {"wifi:on", cmdWifiOn},
+        {"wifi:off", cmdWifiOff},
+        {"info:on", cmdInfoOn},
+        {"info:off", cmdInfoOff},
+        {"debug:on", cmdDebugOn},
+        {"debug:off", cmdDebugOff},
+        {"error:on", cmdErrorOn},
+        {"error:off", cmdErrorOff},
+        {"loop:on", cmdLoopOn},
+        {"loop:off", cmdLoopOff},
+        {"watchdog:on", cmdWatchdogOn},
+        {"watchdog:off", cmdWatchdogOff},
+        {"timestamps:on", cmdTimeStampsOn},
+        {"timestamps:off", cmdTImeStampsOff},
+        {"printlevel:on", cmdPrintLevelOn},
+        {"printlevel:off", cmdPrintLevelOff}
+    };   
+
+   _logLevelNames = {
+        {0x00, " NONE: "},
+        {0x01, " SERIALONOFF: "},
+        {0x02, " WIFIONOFF: "},
+        {0x04, " INFO: "},
+        {0x08, " DEBUG: "},
+        {0x10, " ERROR: "},
+        {0x20, " LOOP: "},
+        {0x40, " WATCHDOG: "},
+        {0x80, " TIMESTAMPS: "},
+        {0x100, " PRINTLEVEL: "}
+    };
 }
 
-void Log::begin(AsyncWebServer* server)
+std::vector<String> Log::GetCommands()
+ {
+    std::vector<String> result;
+
+    for (const auto& [cmd, _] : _debugCommands)
+    {
+        result.push_back(cmd);
+    }
+
+    return result;
+}
+
+void Log::begin(AsyncEventSource* events)
 {
-    InitializeCommands(); 
-    
-    WebSerial.begin(server);
-    WebSerial.msgCallback(recvDebugDataMsg);    
+    if (events == nullptr)
+    {
+        // Handle the error appropriately       
+        Log::println("Error: Events instance is null", LogLevel::ERROR);
+        return;
+    }
+
+    InitializeCommands();
+
+    _eventsSerial.begin(events);
+    _logWriter.begin(&Serial, &_eventsSerial);
+    xMultiPrintMutex = xSemaphoreCreateRecursiveMutex();
 }
 
-// Print
+void Log::setup()
+{
+    xTaskCreate(task,
+        "LogTask",
+        16000,      // Stack size in bytes. 
+        nullptr,        
+        1,          // Priority of the task. 
+        &logTask);
+}
+
+bool Log::loop()
+{
+    return false;
+}
+
+void Log::task(void* data)
+{
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+
+    while(true)
+    {
+
+        // If there has not been log data printed for a refresh time flush
+        // the current contents so it can be seen or if the log is full
+        // flush right away.        
+        _logWriter.WaitBufferFull(pdMS_TO_TICKS(750));
+        _logWriter.FlushLog();
+    }
+}
+
 void Log::print(String& m, LogLevel level)
+{   
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY); 
+    PrintTags(level);
+    _logWriter.print(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
+}
+
+void Log::print(byte& m, LogLevel level)
 {
-    printWifi(m, level);
-    printSerialPort(m, level);
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY); 
+    PrintTags(level);
+    _logWriter.print(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
+}
+
+void Log::print(bool m, LogLevel level)
+{
+   if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY); 
+    PrintTags(level);
+    _logWriter.print(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 void  Log::print(const char* m, LogLevel level)
 {
-    printWifi(m, level);
-    printSerialPort(m, level);
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY); 
+    PrintTags(level);
+    _logWriter.print(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 void Log::print(char* m, LogLevel level)
 {
-    printWifi(m, level);
-    printSerialPort(m, level);
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY); 
+    PrintTags(level);
+    _logWriter.print(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 void Log::print(int m, LogLevel level)
 {
-    printWifi(m, level);
-    printSerialPort(m, level);
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
+    PrintTags(level);
+    _logWriter.print(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 void  Log::print(uint8_t m, LogLevel level)
 {
-    printWifi(m, level);
-    printSerialPort(m, level);
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
+    PrintTags(level);
+    _logWriter.print(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 void  Log::print(uint16_t m, LogLevel level)
 {
-    printWifi(m, level);
-    printSerialPort(m, level);
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
+    PrintTags(level);
+    _logWriter.print(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 void  Log::print(uint32_t m, LogLevel level)
 {
-    printWifi(m, level);
-    printSerialPort(m, level);
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
+    PrintTags(level);
+    _logWriter.print(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 void  Log::print(double m, LogLevel level)
 {
-    printWifi(m, level);
-    printSerialPort(m, level);
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
+    PrintTags(level);
+    _logWriter.print(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 void  Log::print(float m, LogLevel level)
 {
-    printWifi(m, level);
-    printSerialPort(m, level);
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
+    PrintTags(level);
+    _logWriter.print(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 
@@ -152,424 +327,133 @@ void  Log::print(float m, LogLevel level)
 
 void  Log::println(String& m, LogLevel level)
 {
-    printlnWifi(m, level); 
-    printlnSerialPort(m, level);   
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
+    PrintTags(level);
+    _logWriter.println(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
+}
+
+void Log::println(byte& m, LogLevel level)
+{
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
+    PrintTags(level);
+    _logWriter.println(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
+}
+
+void Log::println(bool m, LogLevel level)
+{
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
+    PrintTags(level);
+    _logWriter.println(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 void  Log::println(const char *m, LogLevel level)
 {
-    printlnWifi(m, level); 
-    printlnSerialPort(m, level);
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
+    PrintTags(level);
+    _logWriter.println(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 void  Log::println(char *m, LogLevel level)
 {
-    printlnWifi(m, level); 
-    printlnSerialPort(m, level);
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
+    PrintTags(level);
+    _logWriter.println(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 void  Log::println(int m, LogLevel level)
 {
-    printlnWifi(m, level); 
-    printlnSerialPort(m, level);
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
+    PrintTags(level);    
+    _logWriter.println(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 void  Log::println(uint8_t m, LogLevel level)
 {
-    printlnWifi(m, level); 
-    printlnSerialPort(m, level);
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
+    PrintTags(level);
+    _logWriter.println(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 void  Log::println(uint16_t m, LogLevel level)
 {
-    printlnWifi(m, level); 
-    printlnSerialPort(m, level);
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
+    PrintTags(level);
+    _logWriter.println(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 void  Log::println(uint32_t m, LogLevel level)
 {
-    printlnWifi(m, level); 
-    printlnSerialPort(m, level);
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
+    PrintTags(level);
+    _logWriter.println(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 void  Log::println(float m, LogLevel level)
 {
-    printlnWifi(m, level); 
-    printlnSerialPort(m, level);
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
+    PrintTags(level);
+    _logWriter.println(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 void  Log::println(double m, LogLevel level)
 {
-    printlnWifi(m, level); 
-    printlnSerialPort(m, level);
+    if(IsLevelOn(level) == false)
+        return;
+
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
+    PrintTags(level);
+    _logWriter.println(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
-// Seial Port print
-
-void Log::printSerialPort(String& s, LogLevel level)
+void Log::TakeMultiPrintSection()
 {
-    if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    Serial.print(s);
+    xSemaphoreTakeRecursive(xMultiPrintMutex, portMAX_DELAY);
 }
 
-void Log::printSerialPort(const char *m, LogLevel level)
+void Log::GiveMultiPrintSection()
 {
-    if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;     
-
-    Serial.print(m);
-}
-
-void Log::printSerialPort(char *m, LogLevel level)
-{
-   if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    Serial.print(m);
-}
-
-void Log::printSerialPort(int m, LogLevel level)
-{
-   if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    Serial.print(m);
-}
-
-void Log::printSerialPort(uint8_t m, LogLevel level)
-{
-   if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    Serial.print(m);
-}
-
-void Log::printSerialPort(uint16_t m, LogLevel level)
-{
-   if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    Serial.print(m);
-}
-
-void Log::printSerialPort(uint32_t m, LogLevel level)
-{
-    if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    Serial.print(m);
-}
-
-void Log::printSerialPort(double m, LogLevel level)
-{
-   if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    Serial.print(m);
-}
-
-void Log::printSerialPort(float m, LogLevel level)
-{
-    if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    Serial.print(m);
-}
-
-// Seial Port println 
-
-void Log::printlnSerialPort(String& s, LogLevel level)
-{
-   if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    Serial.println(s);
-}
-
-void Log::printlnSerialPort(const char *m, LogLevel level)
-{
-    if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    Serial.println(m);
-}
-
-void Log::printlnSerialPort(char *m, LogLevel level)
-{
-    if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    Serial.println(m);
-}
-
-void Log::printlnSerialPort(int m, LogLevel level)
-{
-    if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    Serial.println(m);
-}
-
-void Log::printlnSerialPort(uint8_t m, LogLevel level)
-{
-    if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    Serial.println(m);
-}
-
-void Log::printlnSerialPort(uint16_t m, LogLevel level)
-{
-    if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    Serial.println(m);
-}
-
-void Log::printlnSerialPort(uint32_t m, LogLevel level)
-{
-    if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    Serial.println(m);
-}
-
-void Log::printlnSerialPort(float m, LogLevel level)
-{
-   if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    Serial.println(m);
-}
-
-void Log::printlnSerialPort(double m, LogLevel level)
-{
-   if(IsSerialOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    Serial.println(m);
-}
-
-// Wifi print
-
-void Log::printWifi(String& s, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.print(s);
-}
-
-void Log::printWifi(const char *m, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.print(m);
-}
-
-void Log::printWifi(char *m, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.print(m);
-}
-
-void Log::printWifi(int m, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.print(m);
-}
-
-void Log::printWifi(uint8_t m, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.print(m);
-}
-
-void Log::printWifi(uint16_t m, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.print(m);
-}
-
-void Log::printWifi(uint32_t m, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.print(m);
-}
-
-void Log::printWifi(double m, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.print(m);
-}
-
-void Log::printWifi(float m, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.print(m);
-}
-
-// wifi println
-
-void Log::printlnWifi(String& s, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.println(s);
-}
-
-void Log::printlnWifi(const char *m, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.println(m);
-}
-
-void Log::printlnWifi(char *m, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.println(m);
-}
-
-void Log::printlnWifi(int m, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.println(m);
-}
-
-void Log::printlnWifi(uint8_t m, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.println(m);
-}
-
-void Log::printlnWifi(uint16_t m, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.println(m);
-}
-
-void Log::printlnWifi(uint32_t m, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.println(m);
-}
-
-void Log::printlnWifi(float m, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.println(m);
-}
-
-void Log::printlnWifi(double m, LogLevel level)
-{
-   if(IsWifiOn() == false)
-        return;
-    if(IsLevelOn(level) == false)        
-        return;
-
-    WebSerial.println(m);
+    xSemaphoreGiveRecursive(xMultiPrintMutex);
 }
 
 bool Log::IsSerialOn()
@@ -585,6 +469,26 @@ bool Log::IsWifiOn()
 bool Log::IsLevelOn(LogLevel level)
 {
     return (_logLevel & level) == level;
+}
+
+void Log::PrintTags(LogLevel level)
+{
+    if(_logWriter.GetNewLine() == false)
+        return;
+
+    if(IsLevelOn(LogLevel::TIMESTAMPS))
+    {
+        String formattedTime;
+        TimeClient::getFormattedDate(formattedTime);
+
+         _logWriter.print(formattedTime);
+    }
+    if(IsLevelOn(LogLevel::PRINTLEVEL))
+    {        
+        _logWriter.print(_logLevelNames[(int) level]);
+    }
+
+    _logWriter.SetNewLineFalse();
 }
 
     

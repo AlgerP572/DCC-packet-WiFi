@@ -143,12 +143,12 @@ const int pktLength = 8; // Max length+1 in bytes of DCC packet
 const int nIntervals = 128;
 
 // Variables shared by interrupt routine and main loop
-volatile byte dccPacket[nPackets][pktLength]; // buffer to hold packets
-volatile unsigned int dccIntervals[nPackets][nIntervals]; // buffer to hold intervals for the packets.
+volatile byte dccPacket[nPackets][pktLength]; // Buffer to hold packets
+volatile unsigned int dccIntervals[nPackets][nIntervals]; // Buffer to hold intervals for the packets.
 volatile byte packetsPending = 0;             // Count of unprocessed packets
-volatile byte activePacket =   0; // indicate which buffer is currently being filled
-volatile bool filterInput =    true; // conditions input to remove transient changes
-volatile byte strictMode =     1; // rejects frames containing out-of-spec bit lengths
+volatile byte activePacket =   0; // Indicates which buffer is currently being filled
+volatile bool filterInput =    true; // Conditions input to remove transient changes
+volatile byte strictMode =     1; // Rejects frames containing out-of-spec bit lengths
 
 // Variables used by main loop
 byte packetHashListSize = 32; // DCC packets checksum buffer size
@@ -157,7 +157,7 @@ bool showAcc = true;
 bool showHeartBeat = true;
 bool showDiagnostics = true;
 bool showBitLengths = false;
-bool showCpuStats = false;
+bool showCpuStats = true;
 
 byte inputPacket = 0; // Index of next packet to be analysed in dccPacket array
 byte pktByteCount = 0;
@@ -169,19 +169,20 @@ unsigned int inactivityCount = 0;
 
 // Buffers for decoded packets, used by HTTP and OLED output.
 //char packetBuffer[5000] = "";
-//StringBuilder sbPacketDecode(packetBuffer, sizeof(packetBuffer));
+//StringBuilder sbPacketDecode(packetBuffer, sizeof(packetBuffer), LogLevel::INFO);
 
 
 // Pre-declare capture function
+SemaphoreHandle_t xPacketSemaphore = NULL;
 bool INTERRUPT_SAFE capture(unsigned long halfBitLengthTicks);
 
 //=======================================================================
 // Perform the setup functions for the application.
 
 void DCCPacketDecoderModule::setup()
-{
-    Serial.println(F("DCC Packet Analyze initialising"));
-
+{    
+    Log::println((char*)F("DCC Packet Analyze initialising"), LogLevel::INFO);
+    
 #ifdef LEDPIN_ACTIVE
     pinMode(LEDPIN_ACTIVE, OUTPUT);
 #endif
@@ -199,31 +200,78 @@ void DCCPacketDecoderModule::setup()
     // External resistor is preferred as it can be lower, so
     // improve the switching speed of the Optocoupler.
     pinMode(INPUTPIN, INPUT_PULLUP);
-    Serial.print("INPUTPIN=");
-    Serial.println(INPUTPIN);
+
+    Log::TakeMultiPrintSection();
+    Log::print("INPUTPIN=", LogLevel::INFO);
+    Log::println(INPUTPIN, LogLevel::INFO);
+    Log::GiveMultiPrintSection();
 
     if (!EventTimer.inputCaptureMode())
     {
 
         // Output health warning...
-        Serial.println(F("\r\n** WARNING Measurements will occasionally be out up to ~10us "
-                         "either way **"));
-        Serial.println(F("**         because of inaccuracies in the micros() function.        "
-                         "    **"));
+        Log::println((char*)F("\r\n** WARNING Measurements will occasionally be out up to ~10us "
+                         "either way **"), LogLevel::INFO);
+        Log::println((char*)F("**         because of inaccuracies in the micros() function.        "
+                         "    **"), LogLevel::INFO);
     }
 
     // Set time for first output of statistics during calibration
     lastRefresh = millis();
     DCCStatistics.setRefreshTime(1); // Finish calibrating after 1 second
 
-    Serial.println(F("DCC packet decoder moduleCalibrating... "));
+    xTaskCreate(task,
+        "PacketTask",
+        16000,              //* Stack size in bytes. 
+        (void*)NULL,        // this,     //* Parameter passed as input of the task 
+        1,                  //* Priority of the task. 
+        NULL); 
+
+    Log::println((char*)F("DCC packet decoder moduleCalibrating... "), LogLevel::INFO);
 }
 
 void DCCPacketDecoderModule::begin()
 {
 }
 
-void DCCPacketDecoderModule::loop()
+void DCCPacketDecoderModule::task(void* data)
+{
+     TickType_t xLastWakeTime;
+    xLastWakeTime = xTaskGetTickCount();
+
+    /* We are using the semaphore for synchronisation so we create a binary
+    semaphore rather than a mutex.  We must make sure that the interrupt
+    does not attempt to use the semaphore before it is created! */
+    //
+    // This is handled since the interrupt is not enabled until calibrated
+    // has been set. Currently 1 sec after start.
+    xPacketSemaphore = xSemaphoreCreateBinary();
+
+    while(true)
+    {
+
+        // The interrupt handler will give this semaphore when a valid
+        // DCC packet has been detected.
+        xSemaphoreTake(xPacketSemaphore, portMAX_DELAY);
+
+        /* It is time to execute. */
+        // Check for DCC packets - if found, analyse and display them
+        char packetBuffer[512];
+
+        StringBuilder processDCCResult(packetBuffer, sizeof(packetBuffer));
+
+        if (processDCC(processDCCResult))
+        {
+            Log::print(processDCCResult.getString(), LogLevel::INFO);
+        } 
+
+        /* We have finished our task.  Return to the top of the loop where
+        we will block on the semaphore until it is time to execute
+        again. */      
+    }
+}
+
+bool DCCPacketDecoderModule::loop()
 {
     bool somethingDone = false;
 
@@ -232,7 +280,7 @@ void DCCPacketDecoderModule::loop()
     if (!calibrated && millis() >= lastRefresh + 1000)
     {
         // Calibration cycle done, record the details.
-        Serial.println(F("done."));
+        Log::println((char*)F("done."), LogLevel::INFO);
         calibrated = true;
 
         // Read (and discard) stats, then clear them.
@@ -242,26 +290,31 @@ void DCCPacketDecoderModule::loop()
         // Start recording data from DCC.
         if (!EventTimer.begin(INPUTPIN, capture))
         {
-            Serial.println(F("Unable to start EventTimer, check configured pin"));
+            Log::println((char*)F("Unable to start EventTimer, check configured pin"), LogLevel::ERROR);
+
+            // Additional debugging information or recovery mechanism can be added here            
             while (1);
         }
 
         DCCStatistics.setRefreshTime(4);
-        Serial.print(F("Updates every "));
-        Serial.print(DCCStatistics.getRefreshTime());
-        Serial.println(F(" seconds"));
-        Serial.println(F("---"));
+
+        Log::TakeMultiPrintSection();
+        Log::print((char*)F("Updates every "), LogLevel::INFO);
+        Log::print(DCCStatistics.getRefreshTime(), LogLevel::INFO);
+        Log::println((char*)F(" seconds"), LogLevel::INFO);
+        Log::println((char*)F("---"), LogLevel::INFO);
+        Log::GiveMultiPrintSection();
 
         lastRefresh = millis();
+        return true;
     }
     else if (millis() >= lastRefresh + (unsigned long)DCCStatistics.getRefreshTime() * 1000)
     {
 
         // The next part runs once every 'refresh time' seconds.  It primarily
-        // captures, resets and
-        //  outputs the statistics.
+        // captures, resets and outputs the statistics.
         if (showHeartBeat)
-            Serial.println('-');
+            Log::println("-", LogLevel::INFO);
 
         // Snapshot and clear statistics
         _lastKnownStats = DCCStatistics.getAndClearStats();
@@ -271,27 +324,14 @@ void DCCPacketDecoderModule::loop()
         if (showDiagnostics)
         {
             DCCStatistics.writeFullStatistics(_lastKnownStats, showCpuStats, showBitLengths);
-            Serial.println("--");
+            Log::println("--", LogLevel::INFO);
         }
 
         inputPacket = 0;
         DCCPackets::Reset();
         lastRefresh = millis();
         somethingDone = true;
-    }
-
-    // Check for DCC packets - if found, analyse and display them
-    if (processDCC(Serial))
-    {
-        somethingDone = true;
-        inactivityCount = 0;
-    }
-
-    // Check for commands received over the USB serial connection.
-    if (processCommands())
-    {
-        somethingDone = true;
-        inactivityCount = 0;
+        return true;
     }
 
     // Increment CPU loop counter.  This is done if nothing else was.
@@ -301,6 +341,7 @@ void DCCPacketDecoderModule::loop()
         DCCStatistics.updateLoopCount();
 
     // UpdateLED();
+    return false;
 }
 
 //=======================================================================
@@ -326,6 +367,8 @@ bool INTERRUPT_SAFE capture(unsigned long halfBitLengthTicks)
     static unsigned int previousHalfBitLengthTicks = 0;
     static byte altbit = 0; // 0 for first half-bit and 1 for second.
     byte bitValue;
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
 
     // The most critical parts are done first - read state of digital input.
     byte diginState = digitalRead(INPUTPIN);
@@ -526,6 +569,10 @@ bool INTERRUPT_SAFE capture(unsigned long halfBitLengthTicks)
                         preambleFound = false; // scan for another preamble
                         preambleOneCount = 1; // allow the current bit to be counted in the preamble.
                         intervalCount = 0;
+
+                        // Notify packet prcessor its time to process the packet.
+                        /* Unblock the task by releasing the semaphore. */
+                        xSemaphoreGiveFromISR(xPacketSemaphore, &xHigherPriorityTaskWoken);
                     }
                 }
                 else
@@ -581,6 +628,10 @@ bool INTERRUPT_SAFE capture(unsigned long halfBitLengthTicks)
 
     // Record result
     DCCStatistics.recordInterruptHandlerTime(interruptDuration);
+
+    /* Yield if xHigherPriorityTaskWoken is true.  The 
+    actual macro used here is port specific. */
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 
     return true; // Accept interrupt.
 }
@@ -641,13 +692,14 @@ void DCCPacketDecoderModule::clearHashList()
 // Validate received packet and pass to decoder.
 // Return false if nothing done.
 
-bool DCCPacketDecoderModule::processDCC(Print &output)
+bool DCCPacketDecoderModule::processDCC(StringBuilder &output)
 {
     byte isDifferentPacket = 0;
+    bool result = false;
 
     if (!packetsPending)
     {
-        return false;
+        return result;
     }
 
     pktByteCount = dccPacket[inputPacket][0];
@@ -699,7 +751,8 @@ bool DCCPacketDecoderModule::processDCC(Print &output)
                     packetHashListCounter = 0;
 
                 DecodePacket(output, inputPacket, isDifferentPacket);
-                inputPacket++;                
+                inputPacket++;
+                result = true;                
             }
 
 // Optional test led whose brightness depends on loco speed setting.
@@ -725,7 +778,7 @@ bool DCCPacketDecoderModule::processDCC(Print &output)
     if (inputPacket >= nPackets)
         inputPacket = 0;
 
-    return true;
+    return result;
 }
 
 //=======================================================================
@@ -733,7 +786,7 @@ bool DCCPacketDecoderModule::processDCC(Print &output)
 // textual representation.  Send results out over the USB serial
 // connection.
 
-void DCCPacketDecoderModule::DecodePacket(Print &output, int inputPacket, bool isDifferentPacket)
+void DCCPacketDecoderModule::DecodePacket(StringBuilder &sbTemp, int inputPacket, bool isDifferentPacket)
 {
     byte instrByte1;
     byte decoderType; // 0=Loc, 1=Acc
@@ -741,8 +794,8 @@ void DCCPacketDecoderModule::DecodePacket(Print &output, int inputPacket, bool i
     byte speed;
     bool outputDecodedData = false;
 
-    char tempBuffer[100];
-    StringBuilder sbTemp(tempBuffer, sizeof(tempBuffer));
+    // char tempBuffer[100];
+    // StringBuilder sbTemp(tempBuffer, sizeof(tempBuffer));
 
     // First determine the decoder type and address.
     if (dccPacket[inputPacket][1] == 0B11111111)
@@ -1047,11 +1100,9 @@ void DCCPacketDecoderModule::DecodePacket(Print &output, int inputPacket, bool i
         // Get reference to buffer containing results.
         char *decodedPacket = sbTemp.getString();
 
-        DCCPackets::SetPacketString(inputPacket, decodedPacket);
-       
-
-        // Also print to USB serial, and dump packet in hex.       
-        output.println(decodedPacket);
+        DCCPackets::SetPacketString(inputPacket, decodedPacket);       
+         
+        //output.println(decodedPacket);
 
         // Useful to debug but creates a busy serial monitor...
         // char intervalBuffer[1024];
@@ -1063,151 +1114,156 @@ void DCCPacketDecoderModule::DecodePacket(Print &output, int inputPacket, bool i
 
         //output.println(intervals);
     }
+
+    // Complete displayed packet info
+    sbTemp.println("");
 }
 
 //=======================================================================
 // Process commands sent over the USB serial connection.
-//  Return false if nothing done.
+//  Return false ifcommand unknown or not processed.
+bool DCCPacketDecoderModule::processCommands(const char* command, int length)
+{  
+    bool result = true;
 
-bool DCCPacketDecoderModule::processCommands()
-{
-    if (Serial.available())
+    Log::TakeMultiPrintSection();
+    switch (command[0])
     {
-        switch (Serial.read())
-        {
-        case 49:
-            Serial.println(F("Refresh Time = 1s"));
-            DCCStatistics.setRefreshTime(1);
-            break;
-        case 50:
-            Serial.println(F("Refresh Time = 2s"));
-            DCCStatistics.setRefreshTime(2);
-            break;
-        case 51:
-            Serial.println(F("Refresh Time = 4s"));
-            DCCStatistics.setRefreshTime(4);
-            break;
-        case 52:
-            Serial.println(F("Refresh Time = 8s"));
-            DCCStatistics.setRefreshTime(8);
-            break;
-        case 53:
-            Serial.println(F("Refresh Time = 16s"));
-            DCCStatistics.setRefreshTime(16);
-            break;
-        case 54:
-            Serial.println(F("Buffer Size = 4"));
-            packetHashListSize = 2;
-            break;
-        case 55:
-            Serial.println(F("Buffer Size = 8"));
-            packetHashListSize = 8;
-            break;
-        case 56:
-            Serial.println(F("Buffer Size = 16"));
-            packetHashListSize = 16;
-            break;
-        case 57:
-            Serial.println(F("Buffer Size = 32"));
-            packetHashListSize = 32;
-            break;
-        case 48:
-            Serial.println(F("Buffer Size = 64"));
-            packetHashListSize = 64;
-            break;
-        case 'a':
-        case 'A':
-            showAcc = !showAcc;
-            Serial.print(F("show accessory packets = "));
-            Serial.println(showAcc);
-            break;
-        case 'l':
-        case 'L':
-            showLoc = !showLoc;
-            Serial.print(F("show loco packets = "));
-            Serial.println(showLoc);
-            break;
-        case 'h':
-        case 'H':
-            showHeartBeat = !showHeartBeat;
-            Serial.print(F("show heartbeat = "));
-            Serial.println(showHeartBeat);
-            break;
-        case 'd':
-        case 'D':
-            showDiagnostics = !showDiagnostics;
-            Serial.print(F("show diagnostics = "));
-            Serial.println(showDiagnostics);
-            break;
-        case 'f':
-        case 'F':
-            filterInput = !filterInput;
-            Serial.print(F("filter input = "));
-            Serial.println(filterInput);
-            break;
-        case 's':
-        case 'S':
-            strictMode = (strictMode + 1) % 3;
-            Serial.print(F("NMRA validation level = "));
-            Serial.println(strictMode);
-            break;
-        case 'b':
-        case 'B':
-            showBitLengths = !showBitLengths;
-            Serial.print(F("show bit lengths = "));
-            Serial.println(showBitLengths);
-            break;
-        case 'c':
-        case 'C':
-            showCpuStats = !showCpuStats;
-            Serial.print(F("show Cpu stats = "));
-            Serial.println(showCpuStats);
-            break;
-        case 'i':
-        case '?':
-            Serial.println();
-            Serial.println(
-                F("Keyboard commands that can be sent via Serial Monitor:"));
-            Serial.println(F("1 = 1s refresh time"));
-            Serial.println(F("2 = 2s"));
-            Serial.println(F("3 = 4s (default)"));
-            Serial.println(F("4 = 8s"));
-            Serial.println(F("5 = 16s"));
-            Serial.println(F("6 = 4 DCC packet buffer"));
-            Serial.println(F("7 = 8"));
-            Serial.println(F("8 = 16"));
-            Serial.println(F("9 = 32 (default)"));
-            Serial.println(F("0 = 64"));
-            Serial.println(F("a = show accessory packets toggle"));
-            Serial.println(F("l = show locomotive packets toggle"));
-            Serial.println(F("d = show diagnostics toggle"));
-            Serial.println(F("h = show heartbeat toggle"));
-            Serial.println(F("b = show half-bit counts by length toggle"));
-            Serial.println(F("c = show cpu/irc usage in sniffer"));
-            Serial.println(F("f = input filter toggle"));
-            Serial.println(
-                F("s = set NMRA compliance strictness "
-                  "(0=none,1=decoder,2=controller)"));
-            Serial.println(F("? = help (show this information)"));
-            Serial.print(F("ShowLoco "));
-            Serial.print(showLoc);
-            Serial.print(F(" / ShowAcc "));
-            Serial.print(showAcc);
-            Serial.print(F(" / RefreshTime "));
-            Serial.print(DCCStatistics.getRefreshTime());
-            Serial.print(F("s / BufferSize "));
-            Serial.print(packetHashListSize);
-            Serial.print(F(" / Filter "));
-            Serial.print(filterInput);
-            Serial.print(F(" / Strict Bit Validation "));
-            Serial.println(strictMode);
-            Serial.println();
-            break;
-        }
-        return true;
+    case 49:
+        Log::println((char*)F("Refresh Time = 1s"), LogLevel::INFO);
+        DCCStatistics.setRefreshTime(1);
+        break;
+    case 50:
+        Log::println((char*)F("Refresh Time = 2s"), LogLevel::INFO);
+        DCCStatistics.setRefreshTime(2);
+        break;
+    case 51:
+        Log::println((char*)F("Refresh Time = 4s"), LogLevel::INFO);
+        DCCStatistics.setRefreshTime(4);
+        break;
+    case 52:
+        Log::println((char*)F("Refresh Time = 8s"), LogLevel::INFO);
+        DCCStatistics.setRefreshTime(8);
+        break;
+    case 53:
+        Log::println((char*)F("Refresh Time = 16s"), LogLevel::INFO);
+        DCCStatistics.setRefreshTime(16);
+        break;
+    case 54:
+        Log::println((char*)F("Buffer Size = 4"), LogLevel::INFO);
+        packetHashListSize = 2;
+        break;
+    case 55:
+        Log::println((char*)F("Buffer Size = 8"), LogLevel::INFO);
+        packetHashListSize = 8;
+        break;
+    case 56:
+        Log::println((char*)F("Buffer Size = 16"), LogLevel::INFO);
+        packetHashListSize = 16;
+        break;
+    case 57:
+        Log::println((char*)F("Buffer Size = 32"), LogLevel::INFO);
+        packetHashListSize = 32;
+        break;
+    case 48:
+        Log::println((char*)F("Buffer Size = 64"), LogLevel::INFO);
+        packetHashListSize = 64;
+        break;
+    case 'a':
+    case 'A':
+        showAcc = !showAcc;
+        Log::print((char*)F("show accessory packets = "), LogLevel::INFO);
+        Log::println(showAcc, LogLevel::INFO);
+        break;
+    case 'l':
+    case 'L':
+        showLoc = !showLoc;
+        Log::print((char*)F("show loco packets = "), LogLevel::INFO);
+        Log::println(showLoc, LogLevel::INFO);
+        break;
+    case 'h':
+    case 'H':
+        showHeartBeat = !showHeartBeat;
+        Log::print((char*)F("show heartbeat = "), LogLevel::INFO);
+        Log::println(showHeartBeat, LogLevel::INFO);
+        break;
+    case 'd':
+    case 'D':
+        showDiagnostics = !showDiagnostics;
+        Log::print((char*)F("show diagnostics = "), LogLevel::INFO);
+        Log::println(showDiagnostics, LogLevel::INFO);
+        break;
+    case 'f':
+    case 'F':
+        filterInput = !filterInput;
+        Log::print((char*)F("filter input = "), LogLevel::INFO);
+        Log::println(filterInput, LogLevel::INFO);
+        break;
+    case 's':
+    case 'S':
+        strictMode = (strictMode + 1) % 3;
+        Log::print((char*)F("NMRA validation level = "), LogLevel::INFO);
+        Log::println(strictMode, LogLevel::INFO);
+        break;
+    case 'b':
+    case 'B':
+        showBitLengths = !showBitLengths;
+        Log::print((char*)F("show bit lengths = "), LogLevel::INFO);
+        Log::println(showBitLengths, LogLevel::INFO);
+        break;
+    case 'c':
+    case 'C':
+        showCpuStats = !showCpuStats;
+        Log::print((char*)F("show Cpu stats = "), LogLevel::INFO);
+        Log::println(showCpuStats, LogLevel::INFO);
+        break;
+    case 'i':
+    case '?':
+        Log::println("", LogLevel::INFO);
+        Log::println(
+            (char*)F("Keyboard commands that can be sent via Serial Monitor:"), LogLevel::INFO);
+        Log::println((char* )F("1 = 1s refresh time"), LogLevel::INFO);
+        Log::println((char*) F("2 = 2s"), LogLevel::INFO);
+        Log::println((char*) F("3 = 4s (default)"), LogLevel::INFO);
+        Log::println((char*) F("4 = 8s"), LogLevel::INFO);
+        Log::println((char*) F("5 = 16s"), LogLevel::INFO);
+        Log::println((char*)F("6 = 4 DCC packet buffer"), LogLevel::INFO);
+        Log::println((char*)F("7 = 8"), LogLevel::INFO);
+        Log::println((char*)F("8 = 16"), LogLevel::INFO);
+        Log::println((char*)F("9 = 32 (default)"), LogLevel::INFO);
+        Log::println((char*)F("0 = 64"), LogLevel::INFO);
+        Log::println((char*)F("a = show accessory packets toggle"), LogLevel::INFO);
+        Log::println((char*)F("l = show locomotive packets toggle"), LogLevel::INFO);
+        Log::println((char*)F("d = show diagnostics toggle"), LogLevel::INFO);
+        Log::println((char*)F("h = show heartbeat toggle"), LogLevel::INFO);
+        Log::println((char*)F("b = show half-bit counts by length toggle"), LogLevel::INFO);
+        Log::println((char*)F("c = show cpu/irc usage in sniffer"), LogLevel::INFO);
+        Log::println((char*)F("f = input filter toggle"), LogLevel::INFO);
+        Log::println(
+            (char*)F("s = set NMRA compliance strictness "
+              "(0=none,1=decoder,2=controller)"), LogLevel::INFO);
+        Log::println((char*)F("? = help (show this information)"), LogLevel::INFO);
+        Log::print((char*)F("ShowLoco "), LogLevel::INFO);
+        Log::print(showLoc, LogLevel::INFO);
+        Log::print((char*)F(" / ShowAcc "), LogLevel::INFO);
+        Log::print(showAcc, LogLevel::INFO);
+        Log::print((char*)F(" / RefreshTime "), LogLevel::INFO);
+        Log::print(DCCStatistics.getRefreshTime(), LogLevel::INFO);
+        Log::print((char*)F("s / BufferSize "), LogLevel::INFO);
+        Log::print(&packetHashListSize, LogLevel::INFO);
+        Log::print((char*)F(" / Filter "), LogLevel::INFO);
+        Log::print(filterInput, LogLevel::INFO);
+        Log::print((char*)F(" / Strict Bit Validation "), LogLevel::INFO);
+        Log::println(strictMode, LogLevel::INFO);
+        Log::println("", LogLevel::INFO );
+        break;
+        default:
+            // unknown command
+            result = false;
     }
-    else
-        return false;
+
+    Log::GiveMultiPrintSection();
+    return result;
 }
 
  Statistics DCCPacketDecoderModule::GetLastKnwonStats()
@@ -1245,10 +1301,15 @@ void DCCPacketDecoderModule::GetDCCPacketStats(String& jsonData, Statistics& sta
     Stats["max1BitDelta"] = stats.max1BitDelta;
     Stats["total1"] = stats.total1;
 
+    Stats["ircTime"] = stats.totalInterruptTime;
+    Stats["maxIrcTime"] = stats.maxInterruptTime;
+    Stats["minIrcTime"] = stats.minInterruptTime;
+    Stats["cpuLoad"] = stats.cpuLoad;
+
     serializeJson(doc, jsonData);
 }
 
-void DCCPacketDecoderModule::GetDCCPacketBytes(String& jsonData, Statistics& stats)
+void DCCPacketDecoderModule::GetDCCPacketBytes(String& jsonData)
 {
     JsonDocument doc;    
 
@@ -1259,6 +1320,9 @@ void DCCPacketDecoderModule::GetDCCPacketBytes(String& jsonData, Statistics& sta
     Packets["PacketTwo"] = DCCPackets::GetPacketSrting(2);
     Packets["PacketThree"] = DCCPackets::GetPacketSrting(3);
     Packets["PacketFour"] = DCCPackets::GetPacketSrting(4);
+    Packets["PacketFive"] = DCCPackets::GetPacketSrting(5);
+    Packets["PacketSix"] = DCCPackets::GetPacketSrting(6);
+    Packets["PacketSeven"] = DCCPackets::GetPacketSrting(7);
 
     JsonArray PacketZeroInterval = Packets["PacketZeroInterval"].to<JsonArray>();
 

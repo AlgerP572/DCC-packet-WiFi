@@ -52,6 +52,7 @@ typedef struct {
   unsigned int max1BitDelta=0, max0BitDelta=0;
   unsigned long glitchCount=0, spareLoopCount=0, innerSpareLoopCount=0;
   unsigned int countByLength[2][maxBitLength-minBitLength+1];
+  float cpuLoad;
 } Statistics;
 
 class DCCStatisticsClass {
