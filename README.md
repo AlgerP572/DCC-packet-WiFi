@@ -8,3 +8,11 @@ In addition there is excellent support information at the following site:
 
 https://dcc-ex.com/ex-dccinspector/index.html#gsc.tab=0
 
+# DCC-packet-WiFi
+
+This github repository comprises a derivative work from EX‑DCCInspector. The derivative software supports over the air (OTA) firmware (FW) download and OTA logging.  It also provides a Wifi accessible web page that can be accssed from a web browser to display. Shown below is a sreeshot
+
+![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/0801d99c-f9e8-4729-8c23-cde3e3890973)
+
+
+
