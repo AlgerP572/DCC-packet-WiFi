@@ -54,6 +54,14 @@ build_type = debug
 monitor_filters = esp32_exception_decoder
 ```
 
+# Hardware Interface
+
+Please refer to the DCC-Ex Inspector github page for information for interfacing the Arduino with track level DCC signals.
+
+https://github.com/DCC-EX/DCCInspector-EX
+
+Currently the code in this repository is setup to use the default ESP32 pin i.e. Pin2 for the dcc input.
+
 
 
 
