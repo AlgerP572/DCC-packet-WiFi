@@ -67,13 +67,21 @@ Below is a list of hardware I have used with the Arduino Metro and I know work:
 ## DCC Interface Breakout Board with Grove Port
 
 Interface board to convert the track signal of a DCC model railroad to Arduino levels (3.3V or 5V)
+
 https://www.tindie.com/products/tanner87661/dcc-interface-breakout-board-with-grove-port/
+
+| | |
+|---|---|
+| ![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/b24a129e-d93a-4bf5-8256-dcf4959b1310) | ![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/ad77c2a1-253a-4073-88f4-5576c30c42a7) |
+
 
 ## Tinkerface - Arduino Interface Shield
 
 Arduino Shield providing DCC and Loconet Interface
+
 https://www.tindie.com/products/tanner87661/tinkerface-arduino-interface-shield/
 
+![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/62e01d59-788c-43d9-9c47-0fc7eab4e995)
 
 # First Time WiFi Setup
 
