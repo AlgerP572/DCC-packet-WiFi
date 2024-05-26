@@ -62,6 +62,40 @@ https://github.com/DCC-EX/DCCInspector-EX
 
 Currently the code in this repository is setup to use the default ESP32 pin i.e. Pin2 for the dcc input.
 
+Below is a list of hardware I have used with the Arduino Metro and I know work:
+
+## DCC Interface Breakout Board with Grove Port
+
+Interface board to convert the track signal of a DCC model railroad to Arduino levels (3.3V or 5V)
+https://www.tindie.com/products/tanner87661/dcc-interface-breakout-board-with-grove-port/
+
+## Tinkerface - Arduino Interface Shield
+
+Arduino Shield providing DCC and Loconet Interface
+https://www.tindie.com/products/tanner87661/tinkerface-arduino-interface-shield/
+
+
+# First Time WiFi Setup
+
+DCC packet wifi viewer uses the open source library ESP Async Wifi Manager to manage the connection to the wifi network.  After the first download of the FW and spiffs binaries a one time setup is required to confiure the Arduino for Wifi access.  For some Arduino devcies including the arduino Metro it may be required to hit the reset button in order to start the firware after downloading binaries.  Once the reset button has been hit the FW will run.  Since the FW has never been run before it will enter into Wifi configuration mode and start an access point that allows for Wifi configuration.  The access point should show up in the Wifi settings on most smartphones as Wireless-DCC Get-Setup.  Click on this access point and this should show the Wifi Setup screen.  Follow the prompts and provide the name of the desired Network and its password as shown below:
+
+| | | |
+|---|---|---|
+| ![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/84861569-11ec-4761-a3cb-a8179dbd8d10) | ![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/e5659c4c-66f2-41d5-83d2-94262167de42) | ![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/9e5871b4-be42-445f-a8a3-1e309e2ba4c3) |
+
+Once the setup has been save the FW will restart and connect to your Wifi network using the credentials previously saved above.  To see the ip address that was assigned to the device you can look into your wifi router to see attached devices and their ipaddress.  Once the address is known enter it into the Web browser of your choice and the DCC packet wifi UI should be displayed.  If all is going well you should see the time and CPU load changing once per second.
+
+| | |
+|---|---|
+| ![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/1b9e27dd-f598-48ca-83da-3944edd8e069) | ![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/aaff2063-3b38-405d-88bc-d80ea484e10a) |
+
+
+
+
+
+
+
+
 
 
 
