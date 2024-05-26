@@ -62,6 +62,11 @@ https://github.com/DCC-EX/DCCInspector-EX
 
 Currently the code in this repository is setup to use the default ESP32 pin i.e. Pin2 for the dcc input.
 
+```
+Warning: Do not directly connect the Arduino Metro or other Microcontrollers directly to the track.
+The high track voltage will destor the microcontroller and possibly your computer!!!
+```
+
 Below is a list of hardware I have used with the Arduino Metro and I know work:
 
 ## DCC Interface Breakout Board with Grove Port
