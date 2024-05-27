@@ -102,6 +102,25 @@ Once the setup has been save the FW will restart and connect to your Wifi networ
 |---|---|
 | ![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/1b9e27dd-f598-48ca-83da-3944edd8e069) | ![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/aaff2063-3b38-405d-88bc-d80ea484e10a) |
 
+# Over the Air (OTA) FW Update
+
+The firmware only needs to be updated using the serial port the first time it is installed.  Subsequent firware updates can still be applied via the serial port but DCC packet wifi viewer also includes support for the open source library ElegantOTA.  This library allows the firware and spiffs data to be updated wsing the wireless network.  The main advantage to this approach is that the firmware can be updated in place without be attached to the PC.  This means it can be updated without having to remove the Arduino device from the layout.  A second advantage is that using the Wifi download is much faster that the serial download. The library is simple to use. To access the OTA functions hit the firware update button on the main button bar then simply click on the type of file to download either firmware of spiffs.  This will pop-up a file selection that allows to select the file. Hit OK and the download will begin.
+
+| | |
+|---|---|
+| ![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/932896e0-0144-4ab3-96e9-8038c9e603c8) | ![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/c70c2f32-16ec-4a20-a22a-e831cc9dd295) |
+
+More information on the elegant OTA library can be found here:
+
+https://github.com/ayushsharma82/ElegantOTA
+
+
+
+
+
+
+
+
 
 
 
