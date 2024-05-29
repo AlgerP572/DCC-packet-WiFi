@@ -113,6 +113,15 @@ More information on the elegant OTA library can be found here:
 
 https://github.com/ayushsharma82/ElegantOTA
 
+# DCC Data
+
+The dcc data tab or ui page is the default page that appears when the dcc packet sniffer application first starts.  At any time the user may return to this page but hitting the DCC data button in the top button bar.
+
+![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/7f880dfc-f6df-4fee-b4f0-65c400b150b1)
+
+The page shows the same statitistics as the original dcc inspector packet sniffer on the left side in a tabular format. Up to eight different dcc packets will be dispalyed per measurement cycle.  Dcc packet wifi viewer also shows the timings for the first dcc packet in each grouping in a graphical format.  Each byte is separated into its own plot and each byte is displayed in a different color.  The plots may be saved to a csv file for further analysis.  The data capture can be paused and resumed in order to get a closer look at dcc packets of interest by using the three buttons above the statitics display.
+
+
 
 
 
