@@ -117,9 +117,22 @@ https://github.com/ayushsharma82/ElegantOTA
 
 The dcc data tab or ui page is the default page that appears when the dcc packet sniffer application first starts.  At any time the user may return to this page but hitting the DCC data button in the top button bar.
 
-![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/7f880dfc-f6df-4fee-b4f0-65c400b150b1)
+![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/4608e433-1801-43d0-badd-6285503bba8d)
+
 
 The page shows the same statitistics as the original dcc inspector packet sniffer on the left side in a tabular format. Up to eight different dcc packets will be dispalyed per measurement cycle.  Dcc packet wifi viewer also shows the timings for the first dcc packet in each grouping in a graphical format.  Each byte is separated into its own plot and each byte is displayed in a different color.  The plots may be saved to a csv file for further analysis.  The data capture can be paused and resumed in order to get a closer look at dcc packets of interest by using the three buttons above the statitics display.
+
+# Wifi Log
+
+The Wifi Log tab or ui page serves as the command line interface and output for DCC packet Wifi.  This page allows for the configuration of all of the logging options and can be configured for speed or debugging information as required.  The underlying logging subsystem runs using Rtos tasks and therfore is fully supported on both CPU cores of an ESP32 processor. Shown below is an example of the Wifi log tab:
+
+![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/4a1341e2-44ef-4429-b41e-f677b8bbacd7)
+
+The destinations, log levels and tags are all configurable from the UI.  Default settings for the tab can be changed from the config file stored in the spiffs drive. As can be seen the log destination can be either the Serial port Wifi or both.  This allows complete ssupport in both wired and non-wired configurations.  The wireless option can be advantageous for on the layout debugging in real time. Shown below is an example of WiFi and Serial logging using Arduino IDE as the Serial monitor:
+
+![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/2fe45581-4f59-419a-9d15-628125f082c7)
+
+
 
 
 
