@@ -126,7 +126,7 @@ The page shows the same statitistics as the original dcc inspector packet sniffe
 
 The Wifi Log tab or ui page serves as the command line interface and output for DCC packet Wifi.  This page allows for the configuration of all of the logging options and can be configured for speed or debugging information as required.  The underlying logging subsystem runs using Rtos tasks and therfore is fully supported on both CPU cores of an ESP32 processor. Shown below is an example of the Wifi log tab:
 
-![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/4a1341e2-44ef-4429-b41e-f677b8bbacd7)
+![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/44b3c4bc-fea0-40c4-bc64-ec1c7b5d147f)
 
 The destinations, log levels and tags are all configurable from the UI.  Default settings for the tab can be changed from the config file stored in the spiffs drive. As can be seen the log destination can be either the Serial port Wifi or both.  This allows complete ssupport in both wired and non-wired configurations.  The wireless option can be advantageous for on the layout debugging in real time. Shown below is an example of WiFi and Serial logging using Arduino IDE as the Serial monitor:
 
