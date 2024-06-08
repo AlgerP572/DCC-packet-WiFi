@@ -10,7 +10,10 @@ https://dcc-ex.com/ex-dccinspector/index.html#gsc.tab=0
 # DCC-packet-WiFi
 This github repository comprises a derivative work from EX‑DCCInspector. The derivative software supports over the air (OTA) firmware (FW) download and OTA logging.  It also provides a Wifi accessible web page that can be accssed from a web browser to display. Shown below is a sreenshot of the UI.
 
-![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/0801d99c-f9e8-4729-8c23-cde3e3890973)
+| | |
+|---|---|
+| ![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/0801d99c-f9e8-4729-8c23-cde3e3890973) | ![image](https://github.com/AlgerP572/DCC-packet-WiFi/assets/13104848/5d6db524-5745-4f91-aef7-df9c4cbc3962) |
+
 
 # Building / Compiling DCC-packet-WiFi
 The DCC-packet-WiFi code has been converted to a platform.io project hosted by microsoft visual studio code.
